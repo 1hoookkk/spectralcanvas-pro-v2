@@ -20,7 +20,7 @@ void TopStrip::setupControls()
     
     loadedSampleLabel.setText("No sample loaded", juce::dontSendNotification);
     loadedSampleLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
-    loadedSampleLabel.setFont(12.0f);
+    loadedSampleLabel.setFont(juce::FontOptions().withPointHeight(12.0f));
     addAndMakeVisible(loadedSampleLabel);
     
     // Center section - Mode controls
@@ -34,7 +34,7 @@ void TopStrip::setupControls()
     
     modeLabel.setText("Mode", juce::dontSendNotification);
     modeLabel.setColour(juce::Label::textColourId, juce::Colours::white);
-    modeLabel.setFont(12.0f);
+    modeLabel.setFont(juce::FontOptions().withPointHeight(12.0f));
     addAndMakeVisible(modeLabel);
     
     blendSlider = std::make_unique<juce::Slider>(juce::Slider::LinearHorizontal, juce::Slider::NoTextBox);
@@ -46,7 +46,7 @@ void TopStrip::setupControls()
     
     blendLabel.setText("Blend", juce::dontSendNotification);
     blendLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
-    blendLabel.setFont(12.0f);
+    blendLabel.setFont(juce::FontOptions().withPointHeight(12.0f));
     addAndMakeVisible(blendLabel);
     
     // Right section - Brush controls
@@ -61,7 +61,7 @@ void TopStrip::setupControls()
     
     brushTypeLabel.setText("Brush", juce::dontSendNotification);
     brushTypeLabel.setColour(juce::Label::textColourId, juce::Colours::white);
-    brushTypeLabel.setFont(12.0f);
+    brushTypeLabel.setFont(juce::FontOptions().withPointHeight(12.0f));
     addAndMakeVisible(brushTypeLabel);
     
     brushSizeSlider = std::make_unique<juce::Slider>(juce::Slider::LinearHorizontal, juce::Slider::NoTextBox);
@@ -72,7 +72,7 @@ void TopStrip::setupControls()
     
     brushSizeLabel.setText("Size", juce::dontSendNotification);
     brushSizeLabel.setColour(juce::Label::textColourId, juce::Colours::white);
-    brushSizeLabel.setFont(12.0f);
+    brushSizeLabel.setFont(juce::FontOptions().withPointHeight(12.0f));
     addAndMakeVisible(brushSizeLabel);
     
     brushStrengthSlider = std::make_unique<juce::Slider>(juce::Slider::LinearHorizontal, juce::Slider::NoTextBox);
@@ -83,7 +83,7 @@ void TopStrip::setupControls()
     
     brushStrengthLabel.setText("Strength", juce::dontSendNotification);
     brushStrengthLabel.setColour(juce::Label::textColourId, juce::Colours::white);
-    brushStrengthLabel.setFont(12.0f);
+    brushStrengthLabel.setFont(juce::FontOptions().withPointHeight(12.0f));
     addAndMakeVisible(brushStrengthLabel);
     
     // Far right - Advanced options
@@ -109,89 +109,96 @@ void TopStrip::setupControls()
 
 void TopStrip::paint(juce::Graphics& g)
 {
-    // Semi-transparent dark background with nebula accent
-    g.setColour(juce::Colour(0xaa000000));
-    g.fillRoundedRectangle(getLocalBounds().toFloat(), 8.0f);
+    auto bounds = getLocalBounds();
     
-    // Subtle accent border
-    g.setColour(getNebulaAccentColor().withAlpha(0.3f));
-    g.drawRoundedRectangle(getLocalBounds().toFloat(), 8.0f, 1.0f);
+    // Classic Windows 95 control panel background
+    g.setColour(juce::Colour(0xffc0c0c0)); // Win95 button face color
+    g.fillRect(bounds);
     
-    // Title text
-    g.setColour(juce::Colours::white.withAlpha(0.9f));
-    g.setFont(juce::FontOptions().withPointHeight(16.0f).withStyle("Bold"));
-    g.drawText("SpectralCanvas Pro v2", 
-               juce::Rectangle<int>(margin, 4, 200, 20), 
+    // Raised 3D border (outer highlight, inner shadow)
+    g.setColour(juce::Colours::white); // Highlight
+    g.drawLine(0, 0, getWidth(), 0, 2);
+    g.drawLine(0, 0, 0, getHeight(), 2);
+    
+    g.setColour(juce::Colour(0xff808080)); // Shadow
+    g.drawLine(getWidth()-1, 1, getWidth()-1, getHeight(), 1);
+    g.drawLine(1, getHeight()-1, getWidth(), getHeight()-1, 1);
+    
+    g.setColour(juce::Colour(0xff404040)); // Dark shadow
+    g.drawLine(getWidth()-2, 2, getWidth()-2, getHeight()-1, 1);
+    g.drawLine(2, getHeight()-2, getWidth()-1, getHeight()-2, 1);
+    
+    // Title text - classic MS Sans Serif style
+    g.setColour(juce::Colours::black);
+    g.setFont(juce::FontOptions().withPointHeight(14.0f).withStyle("Bold"));
+    g.drawText("SpectralCanvas Pro v2.0", 
+               juce::Rectangle<int>(10, 8, 200, 18), 
                juce::Justification::centredLeft);
     
-    // Service indicators (matching mockup)
-    const int indicatorY = 8;
-    const int indicatorSize = 8;
-    const int rightMargin = getWidth() - margin;
-    
-    // Service State
-    g.setColour(juce::Colours::lightgreen);
-    g.fillEllipse(rightMargin - 140, indicatorY, indicatorSize, indicatorSize);
-    g.setColour(juce::Colours::white);
-    g.setFont(10.0f);
-    g.drawText("Service State", rightMargin - 130, indicatorY - 2, 80, 12, juce::Justification::centredLeft);
-    
-    // Service Health  
-    g.setColour(juce::Colours::lightgreen);
-    g.fillEllipse(rightMargin - 70, indicatorY, indicatorSize, indicatorSize);
-    g.drawText("Service Health", rightMargin - 60, indicatorY - 2, 80, 12, juce::Justification::centredLeft);
+    // Status indicators - simple text labels in classic style
+    g.setFont(juce::FontOptions().withPointHeight(11.0f));
+    g.setColour(juce::Colours::darkgreen);
+    g.drawText("Audio: ON", getWidth() - 150, 8, 60, 16, juce::Justification::centredLeft);
+    g.drawText("GPU: D3D11", getWidth() - 85, 8, 70, 16, juce::Justification::centredLeft);
 }
 
 void TopStrip::resized()
 {
     const int width = getWidth();
-    const int height = getHeight();
-    const int controlHeight = 24;
-    const int labelHeight = 14;
-    const int sectionSpacing = 40;
+    const int controlHeight = 22; // Classic button height
+    const int labelHeight = 16;
+    const int topMargin = 30; // Space below title
+    const int leftMargin = 12;
+    const int sectionSpacing = 25;
     
-    int x = margin;
-    int y = 28; // Below title
+    int x = leftMargin;
+    int y = topMargin;
     
-    // Left section - File operations (x: margin to ~180)
-    loadSampleButton->setBounds(x, y, 100, controlHeight);
-    x += 110;
-    
-    loadedSampleLabel.setBounds(x, y + 2, 150, labelHeight);
-    x += sectionSpacing + 120; // Move to next section
-    
-    // Center section - Mode controls (x: ~300 to ~500)
-    modeLabel.setBounds(x, y - 18, 50, labelHeight);
-    modeSelector->setBounds(x, y, 80, controlHeight);
+    // File operations section
+    loadSampleButton->setBounds(x, y, 85, controlHeight);
     x += 90;
+    
+    loadedSampleLabel.setBounds(x, y + 3, 140, labelHeight);
+    x += 160; // Move to next section
+    
+    // Mode controls section  
+    modeLabel.setBounds(x, y - 18, 50, labelHeight);
+    modeSelector->setBounds(x, y, 75, controlHeight);
+    x += 85;
     
     blendLabel.setBounds(x, y - 18, 50, labelHeight);
-    blendSlider->setBounds(x, y, 80, controlHeight);
-    x += sectionSpacing + 70; // Move to next section
+    blendSlider->setBounds(x, y, 70, controlHeight);
+    x += 85;
     
-    // Right section - Brush controls (x: ~540 to ~end)
+    // Brush controls section
     brushTypeLabel.setBounds(x, y - 18, 50, labelHeight);
-    brushTypeSelector->setBounds(x, y, 80, controlHeight);
-    x += 90;
+    brushTypeSelector->setBounds(x, y, 75, controlHeight);
+    x += 85;
     
-    brushSizeLabel.setBounds(x, y - 18, 50, labelHeight);
-    brushSizeSlider->setBounds(x, y, 60, controlHeight);
-    x += 70;
+    brushSizeLabel.setBounds(x, y - 18, 40, labelHeight);
+    brushSizeSlider->setBounds(x, y, 55, controlHeight);
+    x += 65;
     
     brushStrengthLabel.setBounds(x, y - 18, 60, labelHeight);
-    brushStrengthSlider->setBounds(x, y, 60, controlHeight);
-    x += 80;
+    brushStrengthSlider->setBounds(x, y, 55, controlHeight);
+    x += 75;
     
-    // Far right - Advanced options
-    if (x < width - 200) // Only show if we have space
+    // Advanced options (if space available)
+    if (x < width - 180)
     {
-        snapToScaleButton->setBounds(x, y - 4, 90, 16);
-        x += 100;
+        snapToScaleButton->setBounds(x, y + 2, 85, 18);
+        x += 95;
         
-        tuningSelector->setBounds(x, y, 70, controlHeight);
-        x += 80;
-        
-        fastPaintButton->setBounds(x, y - 4, 80, 16);
+        if (x < width - 90)
+        {
+            tuningSelector->setBounds(x, y, 65, controlHeight);
+            x += 75;
+            
+            if (x < width - 80)
+            {
+                fastPaintButton->setBounds(x, y + 2, 70, 18);
+            }
+        }
     }
 }
 
@@ -337,17 +344,36 @@ void TopStrip::loadSampleFile()
         {
             if (auto selectedFile = fc.getResult(); selectedFile.existsAsFile())
             {
-                // TODO: Send to AsyncSampleLoader
                 juce::Logger::writeToLog("Loading sample: " + selectedFile.getFullPathName());
                 
+                // Load sample through audio processor (UI thread safe)
+                bool loadSuccess = audioProcessor.loadSampleFile(selectedFile);
+                
                 // Update UI on message thread
-                juce::MessageManager::callAsync([this, selectedFile]()
+                juce::MessageManager::callAsync([this, selectedFile, loadSuccess]()
                 {
-                    loadedSampleLabel.setText(selectedFile.getFileNameWithoutExtension(), 
-                                             juce::dontSendNotification);
-                    
-                    // Switch to Resynth mode
-                    modeSelector->setSelectedId(2, juce::sendNotificationSync);
+                    if (loadSuccess)
+                    {
+                        loadedSampleLabel.setText(selectedFile.getFileNameWithoutExtension(), 
+                                                 juce::dontSendNotification);
+                        loadedSampleLabel.setColour(juce::Label::textColourId, juce::Colours::lightgreen);
+                        
+                        // Switch to Resynth mode
+                        modeSelector->setSelectedId(2, juce::sendNotificationSync);
+                        
+                        juce::Logger::writeToLog("Sample loaded successfully: " + 
+                                                 juce::String(audioProcessor.getSampleLoader().getNumSpectralFrames()) + 
+                                                 " spectral frames");
+                    }
+                    else
+                    {
+                        loadedSampleLabel.setText("Load failed!", juce::dontSendNotification);
+                        loadedSampleLabel.setColour(juce::Label::textColourId, juce::Colours::red);
+                        
+                        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                                                               "Sample Load Error",
+                                                               "Could not load the selected audio file. Please check the file format and try again.");
+                    }
                 });
             }
         });

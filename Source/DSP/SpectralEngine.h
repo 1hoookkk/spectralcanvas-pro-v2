@@ -5,9 +5,19 @@
 #include "../Core/RealtimeSafeTypes.h"
 #include "../Core/MessageBus.h"
 
+// Forward declaration
+class SampleLoader;
+
 class SpectralEngine
 {
 public:
+    enum class SynthMode : int
+    {
+        Synth = 0,   // Pure synthesis from oscillators
+        Resynth = 1, // Sample-based spectral manipulation
+        Hybrid = 2   // Blend of synth and resynth
+    };
+    
     static constexpr size_t FFT_SIZE = 512;
     static constexpr size_t HOP_SIZE = 128;  
     static constexpr size_t NUM_BINS = FFT_SIZE / 2 + 1;
@@ -33,6 +43,11 @@ public:
     // Parameter updates (RT-safe)
     void setSpectralGain(float gain) noexcept { spectralGain_.store(gain, std::memory_order_relaxed); }
     void setSpectralMix(float mix) noexcept { spectralMix_.store(mix, std::memory_order_relaxed); }
+    void setSynthMode(SynthMode mode) noexcept { synthMode_.store(mode, std::memory_order_relaxed); }
+    void setBlendAmount(float blend) noexcept { blendAmount_.store(blend, std::memory_order_relaxed); }
+    
+    // Sample loader connection (RT-safe)
+    void setSampleLoader(const SampleLoader* loader) noexcept { sampleLoader_.store(loader, std::memory_order_release); }
     
     // Mask processing (RT-safe)
     void updateCurrentMask(const MaskColumn* maskColumn) noexcept;
@@ -77,8 +92,13 @@ private:
     // RT-safe parameters
     std::atomic<float> spectralGain_;
     std::atomic<float> spectralMix_;
+    std::atomic<SynthMode> synthMode_;
+    std::atomic<float> blendAmount_; // For Hybrid mode blending
     
-    // Current mask for spectral painting (RT-safe atomic pointer)
+    // Sample loader reference (RT-safe atomic pointer)
+    std::atomic<const SampleLoader*> sampleLoader_;
+    
+    // Current mask for spectral painting (RT-safe atomic pointer)  
     std::atomic<const float*> currentMask_; // Points to MaskColumn::values
     
     // Frame tracking

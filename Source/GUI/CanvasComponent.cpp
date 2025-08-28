@@ -6,7 +6,8 @@
 CanvasComponent::CanvasComponent(SpectralCanvasProAudioProcessor& processor)
     : audioProcessor(processor)
 {
-    // Don't initialize GPU renderer in constructor - defer until window is ready
+    // GPU renderer will be initialized lazily in visibilityChanged()
+    juce::Logger::writeToLog("CanvasComponent constructor started");
     
     // Create floating UI components
     topStrip = std::make_unique<TopStrip>(audioProcessor, *this);
@@ -17,6 +18,8 @@ CanvasComponent::CanvasComponent(SpectralCanvasProAudioProcessor& processor)
     
     // Start 60fps timer for smooth nebula animation
     startTimer(16); // ~60fps (16.67ms)
+    
+    juce::Logger::writeToLog("CanvasComponent constructor completed");
     
     // Initialize stroke system
     currentStroke.isActive = false;
@@ -31,7 +34,6 @@ CanvasComponent::~CanvasComponent()
 
 void CanvasComponent::paint(juce::Graphics& g)
 {
-    
     // GPU renderer handles the main spectral visualization
     if (gpuRenderer && gpuRenderer->isInitialized())
     {
@@ -39,17 +41,28 @@ void CanvasComponent::paint(juce::Graphics& g)
         {
             // Device lost or invalid; shut down gracefully
             gpuRenderer->shutdown();
+            gpuRenderer.reset();
         }
     }
 
     if (gpuRenderer && gpuRenderer->isInitialized())
     {
-        gpuRenderer->beginFrame();
-        gpuRenderer->renderSpectralVisualization();
-        gpuRenderer->renderGestureTrails();
-        gpuRenderer->renderParticleSystem();
-        gpuRenderer->endFrame();
-        gpuRenderer->present();
+        try
+        {
+            gpuRenderer->beginFrame();
+            gpuRenderer->renderSpectralVisualization();
+            gpuRenderer->renderGestureTrails();
+            gpuRenderer->renderParticleSystem();
+            gpuRenderer->endFrame();
+            gpuRenderer->present();
+        }
+        catch (...)
+        {
+            // GPU rendering failed, fall back to software
+            gpuRenderer.reset();
+            paintSoftwareFallback(g);
+            return;
+        }
     }
     else
     {
@@ -249,6 +262,9 @@ void CanvasComponent::mouseDrag(const juce::MouseEvent& e)
     
     currentStroke.points.push_back(point);
     
+    // METASYNTH-STYLE: Generate immediate spectral feedback
+    generateImmediateAudioFeedback(point);
+    
     // Limit stroke length for performance
     if (currentStroke.points.size() > 200)
     {
@@ -383,44 +399,6 @@ void CanvasComponent::setGridVisible(bool visible) { gridVisible = visible; repa
 void CanvasComponent::setSnapToScale(bool snap) { snapToScale = snap; }
 
 // Private helper methods
-void CanvasComponent::initializeGpuRenderer()
-{
-#ifdef _WIN32
-    try 
-    {
-        gpuRenderer = std::make_unique<D3D11Renderer>();
-        
-        // Initialize with window handle when component is visible
-        if (auto* peer = getPeer())
-        {
-            if (auto* nativeHandle = peer->getNativeHandle())
-            {
-                bool success = gpuRenderer->initialize(nativeHandle, getWidth(), getHeight());
-                if (!success)
-                {
-                    // GPU initialization failed, fall back to software rendering
-                    gpuRenderer.reset();
-                }
-            }
-            else
-            {
-                // No native handle available, reset and try later
-                gpuRenderer.reset();
-            }
-        }
-        else
-        {
-            // No peer available yet, reset and try later
-            gpuRenderer.reset();
-        }
-    }
-    catch (...)
-    {
-        // GPU initialization threw exception, use software fallback
-        gpuRenderer.reset();
-    }
-#endif
-}
 
 juce::Point<float> CanvasComponent::screenToSpectral(juce::Point<float> screenPos) const
 {
@@ -570,6 +548,68 @@ juce::Colour CanvasComponent::getNebulaAccentColor() const
     return juce::Colour(0xff00bcd4); // Cyan from mockups
 }
 
+void CanvasComponent::generateImmediateAudioFeedback(const PaintStroke::Point& point)
+{
+    // MetaSynth-style: Convert paint stroke directly to spectral mask
+    // spectralPos.y = frequency (0-1), spectralPos.x = time position
+    
+    MaskColumn maskColumn;
+    maskColumn.numBins = 257; // For 512-point FFT (NUM_BINS = 257)
+    maskColumn.timestampSamples = audioProcessor.getSampleRate() * point.timestamp;
+    maskColumn.frameIndex = static_cast<uint32_t>(point.timestamp * 60.0); // ~60fps equivalent
+    
+    // Clear mask to default (no effect)
+    for (size_t i = 0; i < maskColumn.numBins; ++i)
+    {
+        maskColumn.values[i] = 1.0f; // No masking by default
+    }
+    
+    // Convert screen position to frequency bin
+    const float frequencyRatio = juce::jlimit(0.0f, 1.0f, point.spectralPos.y);
+    const int centerBin = static_cast<int>(frequencyRatio * (maskColumn.numBins - 1));
+    
+    // Calculate brush influence based on size and strength
+    const int brushRadius = static_cast<int>(currentBrushSize * 0.5f);
+    
+    for (int bin = juce::jmax(0, centerBin - brushRadius); 
+         bin <= juce::jmin(static_cast<int>(maskColumn.numBins - 1), centerBin + brushRadius); 
+         ++bin)
+    {
+        const float distance = std::abs(bin - centerBin);
+        const float falloff = juce::jmax(0.0f, 1.0f - (distance / brushRadius));
+        
+        switch (currentBrushType)
+        {
+            case 0: // Paint - Add spectral energy
+                maskColumn.values[bin] = juce::jlimit(0.0f, 3.0f, 
+                    maskColumn.values[bin] + (currentBrushStrength * falloff * point.pressure));
+                break;
+                
+            case 1: // Quantize - Snap to scale (simplified)
+                maskColumn.values[bin] = (falloff > 0.5f) ? 2.0f : 1.0f;
+                break;
+                
+            case 2: // Erase - Remove spectral energy
+                maskColumn.values[bin] = juce::jmax(0.0f, 
+                    maskColumn.values[bin] - (currentBrushStrength * falloff * point.pressure));
+                break;
+                
+            case 3: // Comb - Create harmonic series
+                if (bin % 3 == 0) // Simple harmonic pattern
+                {
+                    maskColumn.values[bin] = 2.0f * currentBrushStrength;
+                }
+                break;
+        }
+    }
+    
+    // Send mask to audio thread immediately (RT-safe)
+    if (auto& maskQueue = audioProcessor.getMaskColumnQueue(); maskQueue.hasSpaceAvailable())
+    {
+        maskQueue.push(maskColumn);
+    }
+}
+
 void CanvasComponent::parentHierarchyChanged()
 {
     // Update UI component references when parent changes
@@ -581,12 +621,63 @@ void CanvasComponent::parentHierarchyChanged()
 
 void CanvasComponent::visibilityChanged()
 {
+    juce::Logger::writeToLog("CanvasComponent::visibilityChanged() called");
+    
 #ifdef _WIN32
+    
+    if (isShowing() && !gpuRenderer)
+    {
+        // Create GPU renderer when component becomes visible
+        juce::Logger::writeToLog("Attempting to create GPU renderer...");
+        try 
+        {
+            gpuRenderer = std::make_unique<D3D11Renderer>();
+            juce::Logger::writeToLog("GPU renderer created successfully");
+        }
+        catch (const std::exception& e)
+        {
+            // GPU creation failed, will use software fallback
+            gpuRenderer.reset();
+            juce::Logger::writeToLog("GPU renderer creation failed with exception: " + juce::String(e.what()));
+            return;
+        }
+        catch (...)
+        {
+            // GPU creation failed, will use software fallback
+            gpuRenderer.reset();
+            juce::Logger::writeToLog("GPU renderer creation failed with unknown exception, using software fallback");
+            return;
+        }
+    }
+    
     if (isShowing() && gpuRenderer && !gpuRenderer->isInitialized())
     {
         if (auto* peer = getPeer())
+        {
             if (auto* handle = peer->getNativeHandle())
-                gpuRenderer->initialize(handle, getWidth(), getHeight());
+            {
+                bool success = gpuRenderer->initialize(handle, getWidth(), getHeight());
+                if (!success)
+                {
+                    // GPU initialization failed, reset and use software fallback
+                    juce::Logger::writeToLog("GPU initialization failed: " + gpuRenderer->getLastError());
+                    gpuRenderer.reset();
+                }
+                else
+                {
+                    juce::Logger::writeToLog("GPU initialized successfully");
+                }
+            }
+            else
+            {
+                juce::Logger::writeToLog("No native handle available for GPU initialization");
+            }
+        }
+        else
+        {
+            juce::Logger::writeToLog("No peer available for GPU initialization");
+        }
     }
 #endif
 }
+

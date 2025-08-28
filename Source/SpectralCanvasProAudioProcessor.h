@@ -5,6 +5,7 @@
 #include "Core/Params.h"
 #include "Core/MessageBus.h"
 #include "DSP/SpectralEngine.h"
+#include "DSP/SampleLoader.h"
 
 class SpectralCanvasProAudioProcessor : public juce::AudioProcessor
 {
@@ -42,6 +43,10 @@ public:
     SpectralDataQueue& getSpectralDataQueue() { return spectralDataQueue; }
     ParameterQueue& getParameterQueue() { return parameterQueue; }
     MaskColumnQueue& getMaskColumnQueue() { return maskColumnQueue; }
+    
+    // Sample loading (UI thread access)
+    bool loadSampleFile(const juce::File& audioFile);
+    SampleLoader& getSampleLoader() { return sampleLoader; }
 
     // Public APVTS access for editor (matches plugin designer's convention)
     juce::AudioProcessorValueTreeState apvts;
@@ -59,6 +64,9 @@ private:
     
     // RT-safe spectral processing
     std::unique_ptr<SpectralEngine> spectralEngine;
+    
+    // RT-safe sample loading for Resynth mode
+    SampleLoader sampleLoader;
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectralCanvasProAudioProcessor)
 };

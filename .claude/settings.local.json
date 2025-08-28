@@ -142,7 +142,8 @@
       "Bash(dumpbin:*)",
       "Bash(\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35215\\bin\\Hostx64\\x64\\dumpbin.exe\" /dependents \"C:\\spectralCanvas Pro\\build\\SpectralCanvasPro_artefacts\\RelWithDebInfo\\Standalone\\spectralCanvas Pro.exe\")",
       "Bash(timeout:*)",
-      "Bash(git init:*)"
+      "Bash(git init:*)",
+      "Bash(\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command \"if (Test-Path ''build'') { Remove-Item ''build'' -Recurse -Force -ErrorAction SilentlyContinue }; Write-Host ''Build directory cleaned''\")"
     ],
     "deny": [],
     "ask": [],

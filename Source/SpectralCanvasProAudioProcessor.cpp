@@ -18,9 +18,15 @@ void SpectralCanvasProAudioProcessor::prepareToPlay(double sampleRate, int sampl
     currentSampleRate = sampleRate;
     currentBlockSize = samplesPerBlock;
     
+    // Initialize RT-safe sample loader
+    sampleLoader.initialize(sampleRate);
+    
     // Initialize RT-safe spectral processing components
     spectralEngine = std::make_unique<SpectralEngine>();
     spectralEngine->initialize(sampleRate, samplesPerBlock);
+    
+    // Connect SampleLoader to SpectralEngine (RT-safe pointer sharing)
+    spectralEngine->setSampleLoader(&sampleLoader);
     
     // Clear any existing data in queues
     spectralDataQueue.clear();
@@ -32,6 +38,8 @@ void SpectralCanvasProAudioProcessor::releaseResources()
 {
     if (spectralEngine)
         spectralEngine->reset();
+        
+    sampleLoader.shutdown();
 }
 
 void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, 
@@ -117,6 +125,12 @@ void SpectralCanvasProAudioProcessor::setStateInformation(const void* data, int 
     {
         apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
     }
+}
+
+bool SpectralCanvasProAudioProcessor::loadSampleFile(const juce::File& audioFile)
+{
+    // This is called from UI thread - safe to allocate
+    return sampleLoader.loadSampleFile(audioFile);
 }
 
 // Plugin factory functions

@@ -39,7 +39,7 @@ void BottomBar::setupControls()
     
     speedLabel.setText("Speed", juce::dontSendNotification);
     speedLabel.setColour(juce::Label::textColourId, juce::Colours::white);
-    speedLabel.setFont(12.0f);
+    speedLabel.setFont(juce::FontOptions().withPointHeight(12.0f));
     addAndMakeVisible(speedLabel);
     
     gainSlider = std::make_unique<juce::Slider>(juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight);
@@ -51,34 +51,34 @@ void BottomBar::setupControls()
     
     gainLabel.setText("Gain", juce::dontSendNotification);
     gainLabel.setColour(juce::Label::textColourId, juce::Colours::white);
-    gainLabel.setFont(12.0f);
+    gainLabel.setFont(juce::FontOptions().withPointHeight(12.0f));
     addAndMakeVisible(gainLabel);
     
     // Right section - Performance metrics (matching mockup)
     latencyLabel.setText("Latency: 17 ms", juce::dontSendNotification);
     latencyLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
-    latencyLabel.setFont(11.0f);
+    latencyLabel.setFont(juce::FontOptions().withPointHeight(11.0f));
     addAndMakeVisible(latencyLabel);
     
     fpsLabel.setText("60 fps", juce::dontSendNotification);
     fpsLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
-    fpsLabel.setFont(11.0f);
+    fpsLabel.setFont(juce::FontOptions().withPointHeight(11.0f));
     addAndMakeVisible(fpsLabel);
     
     cpuLabel.setText("CPU: 12%", juce::dontSendNotification);
     cpuLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
-    cpuLabel.setFont(11.0f);
+    cpuLabel.setFont(juce::FontOptions().withPointHeight(11.0f));
     addAndMakeVisible(cpuLabel);
     
     fftSizeLabel.setText("FFT Size: 4096", juce::dontSendNotification);
     fftSizeLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
-    fftSizeLabel.setFont(11.0f);
+    fftSizeLabel.setFont(juce::FontOptions().withPointHeight(11.0f));
     addAndMakeVisible(fftSizeLabel);
     
     // Service health indicators
     serviceHealthLabel.setText("Service Health", juce::dontSendNotification);
     serviceHealthLabel.setColour(juce::Label::textColourId, juce::Colours::white);
-    serviceHealthLabel.setFont(10.0f);
+    serviceHealthLabel.setFont(juce::FontOptions().withPointHeight(10.0f));
     addAndMakeVisible(serviceHealthLabel);
     
     addAndMakeVisible(audioHealthIndicator);
@@ -87,27 +87,48 @@ void BottomBar::setupControls()
 
 void BottomBar::paint(juce::Graphics& g)
 {
-    // Semi-transparent dark background with nebula accent
-    g.setColour(juce::Colour(0xaa000000));
-    g.fillRoundedRectangle(getLocalBounds().toFloat(), 6.0f);
+    auto bounds = getLocalBounds();
     
-    // Subtle accent border
-    g.setColour(getNebulaAccentColor().withAlpha(0.3f));
-    g.drawRoundedRectangle(getLocalBounds().toFloat(), 6.0f, 1.0f);
+    // Classic Windows 95 control panel background
+    g.setColour(juce::Colour(0xffc0c0c0)); // Win95 button face color
+    g.fillRect(bounds);
     
-    // Health indicators
-    const int rightX = getWidth() - margin - 100;
-    const int indicatorY = 20;
+    // Inset 3D border (inverted from TopStrip)
+    g.setColour(juce::Colour(0xff808080)); // Shadow on top/left
+    g.drawLine(0, 0, getWidth(), 0, 1);
+    g.drawLine(0, 0, 0, getHeight(), 1);
     
-    // Audio service indicator
-    drawHealthIndicator(g, juce::Rectangle<int>(rightX, indicatorY, indicatorSize, indicatorSize), audioServiceOk);
-    g.setColour(juce::Colours::white);
-    g.setFont(10.0f);
-    g.drawText("Audio", rightX + indicatorSize + 4, indicatorY - 2, 30, 12, juce::Justification::centredLeft);
+    g.setColour(juce::Colour(0xff404040)); // Dark shadow
+    g.drawLine(1, 1, getWidth()-1, 1, 1);
+    g.drawLine(1, 1, 1, getHeight()-1, 1);
     
-    // GPU service indicator  
-    drawHealthIndicator(g, juce::Rectangle<int>(rightX + 50, indicatorY, indicatorSize, indicatorSize), gpuServiceOk);
-    g.drawText("GPU", rightX + 50 + indicatorSize + 4, indicatorY - 2, 30, 12, juce::Justification::centredLeft);
+    g.setColour(juce::Colours::white); // Highlight on bottom/right
+    g.drawLine(getWidth()-1, 1, getWidth()-1, getHeight(), 2);
+    g.drawLine(1, getHeight()-1, getWidth(), getHeight()-1, 2);
+    
+    // Status panel on the right - inset style
+    const int panelX = getWidth() - 180;
+    const int panelY = 8;
+    const int panelW = 170;
+    const int panelH = getHeight() - 16;
+    
+    // Inset panel background
+    g.setColour(juce::Colour(0xfff0f0f0));
+    g.fillRect(panelX, panelY, panelW, panelH);
+    
+    // Panel inset border
+    g.setColour(juce::Colour(0xff808080));
+    g.drawRect(panelX, panelY, panelW, panelH, 1);
+    g.setColour(juce::Colour(0xff404040));
+    g.drawRect(panelX + 1, panelY + 1, panelW - 2, panelH - 2, 1);
+    
+    // Status text in classic style
+    g.setColour(juce::Colours::black);
+    g.setFont(juce::FontOptions().withPointHeight(10.0f));
+    g.drawText("Latency: 5.2ms", panelX + 8, panelY + 6, 80, 14, juce::Justification::centredLeft);
+    g.drawText("CPU: 12.4%", panelX + 8, panelY + 20, 80, 14, juce::Justification::centredLeft);
+    g.drawText("GPU: Ready", panelX + 90, panelY + 6, 70, 14, juce::Justification::centredLeft);
+    g.drawText("MEM: 45MB", panelX + 90, panelY + 20, 70, 14, juce::Justification::centredLeft);
 }
 
 void BottomBar::resized()

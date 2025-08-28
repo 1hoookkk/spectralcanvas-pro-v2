@@ -99,7 +99,6 @@ private:
     float currentCPU = 0.0f;
     
     // Helper methods
-    void initializeGpuRenderer();
     void paintSoftwareFallback(juce::Graphics& g);
     juce::Point<float> screenToSpectral(juce::Point<float> screenPos) const;
     juce::Point<float> spectralToScreen(juce::Point<float> spectralPos) const;
@@ -109,6 +108,9 @@ private:
     void drawGridOverlay(juce::Graphics& g);
     void drawBrushCursor(juce::Graphics& g);
     juce::Colour getNebulaAccentColor() const;
+    
+    // MetaSynth-style direct spectral painting
+    void generateImmediateAudioFeedback(const PaintStroke::Point& point);
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CanvasComponent)
 };
