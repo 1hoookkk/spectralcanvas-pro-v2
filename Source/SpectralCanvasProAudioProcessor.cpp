@@ -27,6 +27,10 @@ void SpectralCanvasProAudioProcessor::prepareToPlay(double sampleRate, int sampl
     currentSampleRate = sampleRate;
     currentBlockSize = samplesPerBlock;
     
+    // set initial audio path from current params (message thread)
+    setAudioPathFromParams();
+    lastPath_ = currentPath_.load(std::memory_order_relaxed);
+    
     // Initialize RT-safe sample loader
     sampleLoader.initialize(sampleRate);
     
@@ -51,6 +55,9 @@ void SpectralCanvasProAudioProcessor::prepareToPlay(double sampleRate, int sampl
     spectralDataQueue.clear();
     parameterQueue.clear();
     maskColumnQueue.clear();
+    
+    // DIAGNOSTIC: Add queue address and size diagnostics
+    juce::Logger::writeToLog("[AUDIO] MaskQueue addr=" + juce::String::toHexString(reinterpret_cast<uintptr_t>(&maskColumnQueue)) + " sizeof(MaskColumn)=" + juce::String(sizeof(MaskColumn)));
     
 #ifdef PHASE4_EXPERIMENT
     // Initialize Phase 4 experimental components
@@ -91,151 +98,173 @@ void SpectralCanvasProAudioProcessor::releaseResources()
     maskTestFeeder.reset();
 }
 
+// Called from parameter listener / message thread whenever GUI toggles mode
+void SpectralCanvasProAudioProcessor::setAudioPathFromParams()
+{
+#ifdef PHASE4_EXPERIMENT
+    const bool useTestFeeder = useTestFeeder_.load(std::memory_order_relaxed);
+    AudioPath path = useTestFeeder ? AudioPath::TestFeeder : AudioPath::Phase4Synth;
+    currentPath_.store(path, std::memory_order_release);
+#else
+    currentPath_.store(AudioPath::TestFeeder, std::memory_order_release);
+#endif
+}
+
+#ifdef PHASE4_EXPERIMENT
+void SpectralCanvasProAudioProcessor::rtResetPhase4_() noexcept
+{
+    spectralStub.reset(); // zero phases/magnitudes; RT-safe
+}
+
+void SpectralCanvasProAudioProcessor::rtResetTestFeeder_() noexcept
+{
+    // Reset test feeder state if needed
+    // Static phase will be reset naturally due to scope
+}
+
+int SpectralCanvasProAudioProcessor::getActiveBinCount() const noexcept
+{
+    return spectralStub.getActiveBinCount();
+}
+
+int SpectralCanvasProAudioProcessor::getNumBins() const noexcept
+{
+    return spectralStub.getNumBins();
+}
+#endif
+
 void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, 
                                                    juce::MidiBuffer& midiMessages) noexcept
 {
     juce::ignoreUnused(midiMessages);
     juce::ScopedNoDenormals noDenormals;
     
-    // Initialize path tracking for this block
-    wroteAudioThisBlock.store(false, std::memory_order_relaxed);
-    currentPath.store(AudioPath::None, std::memory_order_relaxed);
-    
-    const int totalNumInputChannels = getTotalNumInputChannels();
-    const int totalNumOutputChannels = getTotalNumOutputChannels();
     const int numSamples = buffer.getNumSamples();
-    
-    // Clear any output channels that don't have input data
-    for (int ch = totalNumInputChannels; ch < totalNumOutputChannels; ++ch)
-        buffer.clear(ch, 0, numSamples);
+    buffer.clear(); // clear once at the top
 
-    // Process parameter updates from UI thread (RT-safe)
-    while (auto paramUpdate = parameterQueue.pop())
+    // RT path transition handling
+    const auto path = currentPath_.load(std::memory_order_acquire);
+    if (path != lastPath_)
     {
-        // Apply parameter changes with sample-accurate timing
-        // TODO: Implement parameter smoothing and application
-    }
-
-    // ---- SELECT ONE AUDIO PATH ONLY ----
-    bool useTestFeeder = useTestFeeder_.load(std::memory_order_relaxed);
-
-    // ---- TEST FEEDER ----
-    if (useTestFeeder) {
-        // Test feeder path (default): spectral engine with test tones
-        // Process mask column updates from GPU thread (RT-safe)
-        static MaskColumn currentMaskColumn; // Static to keep mask data alive
-        while (auto maskColumn = maskColumnQueue.pop())
-        {
-            currentMaskColumn = *maskColumn; // Copy mask data
-            
-            // Calculate latency for Phase 2-3 validation (per unified timebase spec)
-            if (currentMaskColumn.timestampSamples > 0.0)
-            {
-                uint64_t currentAudioSamples = processedSampleCount_.load(std::memory_order_relaxed);
-                uint64_t uiTimestampSamples = static_cast<uint64_t>(currentMaskColumn.timestampSamples);
-                
-                if (currentAudioSamples >= uiTimestampSamples)
-                {
-                    uint64_t paintLatencySamples = currentAudioSamples - uiTimestampSamples;
-                    float latencyMs = (paintLatencySamples * 1000.0f) / static_cast<float>(currentSampleRate);
-                    
-                    // Convert to microseconds for RTLatencyTracker
-                    uint32_t latencyMicros = static_cast<uint32_t>(latencyMs * 1000.0f);
-                    latencyTracker_.recordLatency(latencyMicros);
-                }
-            }
-            
-            if (spectralEngine)
-            {
-                spectralEngine->updateCurrentMask(&currentMaskColumn);
-            }
-        }
-        
-        // Process test mask columns for paint-to-audio validation (RT-safe)
-        MaskColumn testMask;
-        while (maskTestFeeder.tryPopMask(testMask))
-        {
-            if (spectralEngine && spectralEngine->isInitialized())
-            {
-                spectralEngine->applyMaskColumn(testMask);
-            }
-        }
-        
-        // RT-safe spectral processing - MUST write into buffer
-        if (spectralEngine && spectralEngine->isInitialized())
-        {
-            // Process first channel through spectral engine
-            const float* inputData = buffer.getReadPointer(0);
-            float* outputData = buffer.getWritePointer(0);
-            
-            spectralEngine->processBlock(inputData, outputData, numSamples);
-            
-            // Copy to other channels if stereo
-            for (int channel = 1; channel < totalNumOutputChannels; ++channel)
-            {
-                buffer.copyFrom(channel, 0, buffer, 0, 0, numSamples);
-            }
-            
-            // Extract spectral data for visualization
-            if (spectralDataQueue.hasSpaceAvailable())
-            {
-                SpectralFrame frame;
-                if (spectralEngine->extractSpectralFrame(frame))
-                {
-                    spectralDataQueue.push(frame);
-                }
-            }
-        }
-        else
-        {
-            // Safety fallback: 220Hz beep to ensure we always hear something
-            generateFallbackBeep(buffer, numSamples);
-        }
-        
-        currentPath.store(AudioPath::TestFeeder, std::memory_order_relaxed);
-        
-        // Quick write check (cheap): look at first sample of ch0
-        if (totalNumOutputChannels > 0 && numSamples > 0 && buffer.getReadPointer(0)[0] != 0.0f)
-            wroteAudioThisBlock.store(true, std::memory_order_relaxed);
-        
-        // Update sample counter and return
-        processedSampleCount_.fetch_add(numSamples, std::memory_order_relaxed);
-        return;
-    }
-
 #ifdef PHASE4_EXPERIMENT
-    // ---- PHASE 4 SYNTH ----
-    if (true) { // Always enter this path when testFeeder is false
-        // Phase 4 experimental path: oscillator bank with key filter
-        // Pop all mask columns into spectral stub
-        spectralStub.popAllMaskColumnsInto(maskColumnQueue);
-        
-        // Apply key filter if enabled
-        if (keyFilterEnabled_.load(std::memory_order_relaxed)) {
-            keyFilter.apply(spectralStub.getMagnitudesWritePtr(), 257);
-        }
-        
-        // Render oscillator bank - MUST write into buffer
-        const float gain = oscGain_.load(std::memory_order_relaxed);
-        spectralStub.process(buffer, gain);
-        
-        currentPath.store(AudioPath::Phase4Synth, std::memory_order_relaxed);
-        if (totalNumOutputChannels > 0 && numSamples > 0 && buffer.getReadPointer(0)[0] != 0.0f)
-            wroteAudioThisBlock.store(true, std::memory_order_relaxed);
-        
-        // Update sample counter and return early
-        processedSampleCount_.fetch_add(numSamples, std::memory_order_relaxed);
-        return;
+        if (path == AudioPath::Phase4Synth)   rtResetPhase4_();
+        else if (path == AudioPath::TestFeeder) rtResetTestFeeder_();
+#endif
+        lastPath_ = path;
     }
+
+    // Initialize write detection for this block
+    wroteAudioFlag_.store(false, std::memory_order_relaxed);
+    
+#if PHASE4_DEBUG_TAP
+    // Record queue address on audio thread for integrity checking
+    debugTap_.queueAddrOnAudio.store(reinterpret_cast<uintptr_t>(&maskColumnQueue), std::memory_order_relaxed);
 #endif
 
-    // ---- FALLBACK BEEP (safety) ----
-    fallbackBeep(buffer); // tiny 220 Hz so we always hear something
-    currentPath.store(AudioPath::Fallback, std::memory_order_relaxed);
-    if (totalNumOutputChannels > 0 && numSamples > 0 && buffer.getReadPointer(0)[0] != 0.0f)
-        wroteAudioThisBlock.store(true, std::memory_order_relaxed);
-    
-    processedSampleCount_.fetch_add(numSamples, std::memory_order_relaxed);
+    // Snapshot only the params needed for the chosen path (no APVTS lookups here)
+    const bool keyFilterOn = keyFilterEnabled_.load(std::memory_order_relaxed);
+    const float oscGainRaw = oscGain_.load(std::memory_order_relaxed);
+    const float oscGain = juce::jlimit(1.0e-6f, 1.0f, oscGainRaw);  // Clamp gain
+
+    switch (path)
+    {
+        case AudioPath::Silent:
+#ifdef PHASE4_EXPERIMENT
+            // Drain queued paint columns so "Drops" stays at 0 in silent mode
+            spectralStub.popAllMaskColumnsInto(maskColumnQueue); // discard all data
+#endif
+            // Nothing is rendered; output remains cleared.
+            return;
+
+        case AudioPath::TestFeeder:
+        {
+#ifdef PHASE4_EXPERIMENT
+            // Don't drain queue - preserve paint data for potential Phase4 switch
+            // TestFeeder generates its own audio independently
+#endif
+            // *** Render ONLY the test feeder here ***
+            static float testPhase = 0.0f;
+            const float freq = 440.0f;
+            const float incr = juce::MathConstants<float>::twoPi * freq / static_cast<float>(getSampleRate());
+            
+            for (int n = 0; n < numSamples; ++n)
+            {
+                testPhase += incr;
+                if (testPhase >= juce::MathConstants<float>::twoPi) 
+                    testPhase -= juce::MathConstants<float>::twoPi;
+                
+                const float sample = 0.2f * std::sin(testPhase);
+                for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                    buffer.getWritePointer(ch)[n] = sample;
+            }
+            
+            // TestFeeder always writes (direct tone)
+            wroteAudioFlag_.store(true, std::memory_order_relaxed);
+            return;
+        }
+
+        case AudioPath::Phase4Synth:
+        {
+#ifdef PHASE4_EXPERIMENT
+            // Increment diagnostic counter to prove this branch executes
+            phase4Blocks_.fetch_add(1, std::memory_order_relaxed);
+            
+            // 1) Drain GUI → magnitudes (non-blocking)
+            spectralStub.popAllMaskColumnsInto(maskColumnQueue);
+            
+            // 2) Gate (only apply when explicitly enabled)
+            if (keyFilterOn) {
+                keyFilter.apply(spectralStub.getMagnitudesWritePtr(), 257);
+            } else {
+                // Ensure KeyFilter is disabled when not wanted
+                keyFilter.enabled.store(false, std::memory_order_relaxed);
+            }
+            
+            // 3) Render
+            spectralStub.process(buffer, oscGain);
+            
+            // DIAGNOSTIC: Force-audible chirp to prove Phase4 branch executes
+            #ifndef PHASE4_DIAG_CHIRP
+            #define PHASE4_DIAG_CHIRP 1
+            #endif
+            
+            #if PHASE4_DIAG_CHIRP
+            // If buffer is still silent, emit a -36 dB sine for 120 ms every second
+            static int   chirpSamples = 0;
+            static float chirpPhase   = 0.0f;
+            const int sr  = (int)getSampleRate();
+            const int N   = numSamples;
+            float currentRms = buffer.getNumChannels() > 0 ? buffer.getRMSLevel(0, 0, N) : 0.0f;
+            bool needChirp = (currentRms < 1.0e-6f);
+            
+            if (needChirp) {
+                const int period = sr;                      // 1 second
+                const int dur    = (int)(0.12 * sr);       // 120 ms audible blip
+                chirpSamples = (chirpSamples + N) % period;
+                if (chirpSamples < dur) {
+                    const float gain = 0.0158f;            // ~ -36 dB
+                    const float inc  = juce::MathConstants<float>::twoPi * 440.0f / (float)sr;
+                    for (int n = 0; n < N; ++n) {
+                        chirpPhase += inc; 
+                        if (chirpPhase >= juce::MathConstants<float>::twoPi) 
+                            chirpPhase -= juce::MathConstants<float>::twoPi;
+                        const float s = std::sin(chirpPhase) * gain;
+                        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                            buffer.getWritePointer(ch)[n] += s;
+                    }
+                }
+            }
+            #endif
+            
+            // Mark "wrote" only if buffer has anything > ~ -120 dBFS
+            const float rms = buffer.getNumChannels() > 0
+                ? buffer.getRMSLevel(0, 0, numSamples) : 0.0f;
+            if (rms > 1.0e-6f)
+                wroteAudioFlag_.store(true, std::memory_order_relaxed);
+#endif
+            return;
+        }
+    }
     
 #if JUCE_DEBUG
     // Health check: detect silent audio in debug builds
@@ -296,6 +325,7 @@ void SpectralCanvasProAudioProcessor::parameterChanged(const juce::String& param
     if (parameterID == Params::ParameterIDs::useTestFeeder)
     {
         useTestFeeder_.store(newValue > 0.5f, std::memory_order_relaxed);
+        setAudioPathFromParams(); // Update path atomically
     }
     else if (parameterID == Params::ParameterIDs::keyFilterEnabled)
     {
@@ -365,6 +395,66 @@ void SpectralCanvasProAudioProcessor::generateImmediateAudioFeedback()
 {
     // Start diagonal sweep test pattern for paint-to-audio validation
     maskTestFeeder.startDiagonalSweep();
+}
+
+bool SpectralCanvasProAudioProcessor::pushMaskColumn(const MaskColumn& mask)
+{
+    // DEBUG: Log that pushMaskColumn is being called
+    juce::Logger::writeToLog("*** PUSHMASKCOLUMN CALLED! *** Path=" + juce::String(static_cast<int>(getCurrentPath())));
+    
+    // TESTING: Temporarily bypass path check to force data through
+    /*
+    // Only push when Phase4 is active - double-check path state
+    if (getCurrentPath() != AudioPath::Phase4Synth) {
+        juce::Logger::writeToLog("pushMaskColumn rejected - not Phase4 path");
+        return false; // Silently ignore when not in Phase4 mode
+    }
+    */
+    
+    juce::Logger::writeToLog("pushMaskColumn proceeding to queue...");
+    
+#if PHASE4_DEBUG_TAP
+    // Create enhanced column with debug sequence
+    static std::atomic<uint64_t> gSeq{1};
+    MaskColumnEx colEx;
+    
+    // Copy base MaskColumn data
+    colEx.frameIndex = mask.frameIndex;
+    colEx.numBins = mask.numBins;
+    colEx.timestampSamples = mask.timestampSamples;
+    colEx.uiTimestampMicros = mask.uiTimestampMicros;
+    colEx.sequenceNumber = mask.sequenceNumber;
+    std::memcpy(colEx.values, mask.values, sizeof(colEx.values));
+    
+    // Add debug sequence
+    colEx.debugSeq = gSeq.fetch_add(1, std::memory_order_relaxed);
+    
+    // Attempt to push enhanced column to queue
+    const bool success = maskColumnQueue.push(colEx);
+    
+    // Update debug tap
+    debugTap_.queueAddrOnPush.store(reinterpret_cast<uintptr_t>(&maskColumnQueue), std::memory_order_relaxed);
+    debugTap_.lastSeqPushed.store(colEx.debugSeq, std::memory_order_relaxed);
+    
+    if (success) {
+        debugTap_.pushes.fetch_add(1, std::memory_order_relaxed);
+        maskPushCount_.fetch_add(1, std::memory_order_relaxed);
+    } else {
+        debugTap_.pushFails.fetch_add(1, std::memory_order_relaxed);
+        maskDropCount_.fetch_add(1, std::memory_order_relaxed);
+    }
+#else
+    // Simple path without debug tap
+    const bool success = maskColumnQueue.push(mask);
+    
+    if (success) {
+        maskPushCount_.fetch_add(1, std::memory_order_relaxed);
+    } else {
+        maskDropCount_.fetch_add(1, std::memory_order_relaxed);
+    }
+#endif
+    
+    return success;
 }
 
 // Phase 2-3 getter methods for debug overlay

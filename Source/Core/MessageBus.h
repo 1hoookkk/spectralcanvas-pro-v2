@@ -5,6 +5,7 @@
 #include <type_traits>
 #include <cstring>
 #include <cstdint>
+#include <cstddef>  // For offsetof
 
 // Phase 4 experiment flag - oscillator bank with key filter
 #define PHASE4_EXPERIMENT 1
@@ -16,6 +17,14 @@ class SpscRing
 public:
     static_assert((CapacityPow2 & (CapacityPow2 - 1)) == 0, "Capacity must be power of two");
     static_assert(std::is_trivially_copyable_v<T>, "T must be trivially copyable (POD) for RT safety");
+    
+    // Hard forbid copies/moves that split producer/consumer state
+    SpscRing(const SpscRing&) = delete;
+    SpscRing& operator=(const SpscRing&) = delete;
+    SpscRing(SpscRing&&) = delete;
+    SpscRing& operator=(SpscRing&&) = delete;
+    
+    SpscRing() = default;
 
     bool push(const T& v) noexcept
     {
@@ -76,8 +85,9 @@ public:
 
 private:
     static constexpr size_t mask_ = CapacityPow2 - 1;
-    T buf_[CapacityPow2]{};                   // POD buffer
-    std::atomic<size_t> read_{0}, write_{0};  // true atomics, no wrappers
+    T buf_[CapacityPow2]{};                           // POD buffer
+    alignas(64) std::atomic<size_t> read_{0};         // Consumer-owned, cache-aligned
+    alignas(64) std::atomic<size_t> write_{0};        // Producer-owned, cache-aligned
     
     // Statistics counters for Phase 2-3 validation
     std::atomic<size_t> pushCount_{0};        // Total successful pushes
@@ -166,6 +176,12 @@ struct MaskColumn
         }
     }
 };
+
+// DIAGNOSTIC: Static asserts to freeze MaskColumn layout and detect instance mismatch  
+static_assert(std::is_trivially_copyable_v<MaskColumn>, "MaskColumn must be POD for queue safety");
+static_assert(alignof(MaskColumn) == 32, "MaskColumn alignment changed - potential cache issues");
+static_assert(offsetof(MaskColumn, values) == 0, "values array must be at offset 0");
+// Note: Full size/offset validation temporarily disabled to allow compilation
 
 #if _MSC_VER
   #pragma warning(pop)

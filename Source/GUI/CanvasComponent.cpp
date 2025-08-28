@@ -2,11 +2,18 @@
 #include "../Core/Params.h"
 #include <chrono>
 
+// Constants for RT-safe paint-to-sound
+namespace {
+    constexpr int kFftSize = 512;
+    constexpr int kNumBins = kFftSize / 2 + 1; // 257
+}
+
 CanvasComponent::CanvasComponent(SpectralCanvasProAudioProcessor& processor)
     : audioProcessor(processor)
 {
     setOpaque(true);
     startTimer(16); // 60fps
+    setWantsKeyboardFocus(true); // Enable keyboard input for 'i' injector
     
     // Initialize stroke system
     currentStroke.isActive = false;
@@ -35,56 +42,115 @@ void CanvasComponent::paint(juce::Graphics& g)
 
     // Phase 2-3 Validation Debug Overlay
     bool debugEnabled = audioProcessor.apvts.getParameterAsValue(Params::ParameterIDs::debugOverlayEnabled).getValue();
+    // ===== Overlay (stable, non-jumbled) =====
     if (debugEnabled)
     {
         auto metrics = audioProcessor.getPerformanceMetrics();
         
-        g.setColour(juce::Colours::lime);
-        g.setFont(juce::FontOptions(10.0f, juce::Font::bold));
-        
-        // Title and basic status
-        g.drawText("Phase 2-3 Validation Metrics", 8, 8, 400, 14, juce::Justification::left);
-        
-        bool useTestFeeder = audioProcessor.apvts.getParameterAsValue(Params::ParameterIDs::useTestFeeder).getValue();
-        g.drawText(juce::String::formatted("Test Mode: %s", useTestFeeder ? "TestFeeder" : "Phase4"), 
-                   8, 22, 200, 14, juce::Justification::left);
-        
-        // Show active audio path and write status
-        auto path = audioProcessor.getCurrentPath();
-        const char* pathStr = (path == SpectralCanvasProAudioProcessor::AudioPath::TestFeeder) ? "TestFeeder" :
-                              (path == SpectralCanvasProAudioProcessor::AudioPath::Phase4Synth) ? "Phase4 Synth" :
-                              (path == SpectralCanvasProAudioProcessor::AudioPath::Fallback) ? "Fallback" : "None";
-        
+        // Snapshot everything into locals to avoid tearing while painting
+        const auto path = audioProcessor.getCurrentPath();
         const bool wrote = audioProcessor.getWroteAudioFlag();
+        const float sr = (float) audioProcessor.getSampleRate();
+        const int bs = audioProcessor.getBlockSize();
+        const int queueDrops = queueDropCounter.load(std::memory_order_relaxed);
+#ifdef PHASE4_EXPERIMENT
+        const int activeBins = audioProcessor.getActiveBinCount();
+        const int totalBins = audioProcessor.getNumBins();
+#else
+        const int activeBins = 0;
+        const int totalBins = 0;
+#endif
         
+        // Compose a single, final audio-path label
+        juce::String pathStr;
+        switch (path) {
+            case SpectralCanvasProAudioProcessor::AudioPath::TestFeeder:
+                pathStr = "Audio Path: TestFeeder (direct tone)";
+                break;
+            case SpectralCanvasProAudioProcessor::AudioPath::Phase4Synth:
+                {
+                    pathStr = "Audio Path: Phase4 Synth ";
+                    pathStr += wrote ? "(writing)" : "(silent)";
+                    pathStr += " [" + juce::String(activeBins) + "/" + juce::String(totalBins) + " bins]";
+                    
+#ifdef PHASE4_EXPERIMENT
+                    // Add queue diagnostics for Phase4 debugging
+                    const uint64_t pushes = audioProcessor.getMaskPushCount();
+                    const uint64_t pops = audioProcessor.getMaskPopCount();
+                    const uint64_t drops = audioProcessor.getMaskDropCount();
+                    const uint64_t phase4Blocks = audioProcessor.getPhase4Blocks();
+                    const float maxMag = audioProcessor.getMaxMagnitude();
+                    pathStr += juce::String::formatted("\nQueue: %llu pushes | %llu pops | %llu drops", pushes, pops, drops);
+                    pathStr += juce::String::formatted("\nMaxMag: %.4f | Phase4 Blocks: %llu", maxMag, phase4Blocks);
+                    
+#if PHASE4_DEBUG_TAP
+                    // Add debug tap for SPSC integrity diagnosis
+                    auto& tap = audioProcessor.getDebugTap();
+                    const uint64_t tapPushes = tap.pushes.load(std::memory_order_relaxed);
+                    const uint64_t tapPushFails = tap.pushFails.load(std::memory_order_relaxed);
+                    const uint64_t tapPops = tap.pops.load(std::memory_order_relaxed);
+                    const uintptr_t queueGUI = tap.queueAddrOnPush.load(std::memory_order_relaxed);
+                    const uintptr_t queueAudio = tap.queueAddrOnAudio.load(std::memory_order_relaxed);
+                    const uint64_t seqPushed = tap.lastSeqPushed.load(std::memory_order_relaxed);
+                    const uint64_t seqPopped = tap.lastSeqPopped.load(std::memory_order_relaxed);
+                    
+                    pathStr += juce::String::formatted("\nTap: %llu/%llu/%llu (push/fail/pop)", tapPushes, tapPushFails, tapPops);
+                    pathStr += juce::String::formatted("\nSeq: %llu->%llu", seqPushed, seqPopped);
+                    if (queueGUI != queueAudio) {
+                        pathStr += "\n*** QUEUE MISMATCH ***";
+                    } else {
+                        pathStr += "\nQueue: SAME";
+                    }
+#endif
+#endif
+                }
+                break;
+            case SpectralCanvasProAudioProcessor::AudioPath::Silent:
+                pathStr = "Audio Path: Silent";
+                break;
+            default:
+                pathStr = "Audio Path: Unknown";
+                break;
+        }
+        
+        // Panel background so text never overlaps the canvas
+        juce::Rectangle<int> panel(8, 8, 520, 120);
+        g.setColour(juce::Colours::black.withAlpha(0.6f));
+        g.fillRoundedRectangle(panel.toFloat(), 6.0f);
+        
+        // Font and line spacing
+        g.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), 14.0f, juce::Font::plain));
+        int x = panel.getX() + 10;
+        int y = panel.getY() + 10;
+        const int lh = 18; // line height
+        
+        // Draw lines (each once)
         g.setColour(juce::Colours::yellow);
-        g.drawText(juce::String("Audio Path: ") + pathStr + (wrote ? "  (writing)" : "  (silent)"),
-                   8, 50, 400, 14, juce::Justification::left);
+        g.drawText(pathStr, x, y, panel.getWidth()-20, lh, juce::Justification::left); y += lh;
         
-        // Latency metrics  
         g.setColour(metrics.medianLatencyMs <= 5.0f ? juce::Colours::lime : juce::Colours::orange);
-        g.drawText(juce::String::formatted("Latency: %.1fms / %.1fms (med/p95)", 
-                   metrics.medianLatencyMs, metrics.p95LatencyMs),
-                   8, 64, 400, 14, juce::Justification::left);
+        g.drawText("Latency: " + juce::String(metrics.medianLatencyMs, 1) + "ms / "
+                   + juce::String(metrics.p95LatencyMs, 1) + "ms (med/p95)",
+                   x, y, panel.getWidth()-20, lh, juce::Justification::left); y += lh;
         
-        // Queue and performance stats
-        g.setColour(metrics.dropCount == 0 ? juce::Colours::lime : juce::Colours::red);
-        g.drawText(juce::String::formatted("Queue: %zu/%d | Drops: %zu | Local Drops: %d",
-                   metrics.queueDepth, 8, metrics.dropCount, 
-                   queueDropCounter.load(std::memory_order_relaxed)),
-                   8, 78, 400, 14, juce::Justification::left);
-        
-        // Frame rate and audio stats
-        g.setColour(currentFPS >= 58.0f ? juce::Colours::lime : juce::Colours::yellow);
-        g.drawText(juce::String::formatted("FPS: %.1f | Processed Samples: %llu | XRuns: %zu",
-                   currentFPS, metrics.processedSamples, metrics.xrunCount),
-                   8, 92, 400, 14, juce::Justification::left);
-        
-        // Sample rate and block size
         g.setColour(juce::Colours::lightgrey);
-        g.drawText(juce::String::formatted("SR: %.1fkHz | Block: %d samples",
-                   audioProcessor.getSampleRate() / 1000.0, audioProcessor.getBlockSize()),
-                   8, 78, 400, 14, juce::Justification::left);
+        g.drawText("SR: " + juce::String(sr / 1000.0f, 1) + "kHz | Block: "
+                   + juce::String(bs) + " samples",
+                   x, y, panel.getWidth()-20, lh, juce::Justification::left); y += lh;
+        
+        g.setColour(metrics.dropCount == 0 ? juce::Colours::lime : juce::Colours::red);
+        g.drawText("Queue: " + juce::String((int)metrics.queueDepth) + "/8 | Drops: " 
+                   + juce::String((int)metrics.dropCount) + " | Local Drops: " + juce::String(queueDrops),
+                   x, y, panel.getWidth()-20, lh, juce::Justification::left); y += lh;
+        
+        g.setColour(currentFPS >= 58.0f ? juce::Colours::lime : juce::Colours::yellow);
+        g.drawText("FPS: " + juce::String(currentFPS, 1)
+                   + " | Processed Samples: " + juce::String((long long)metrics.processedSamples)
+                   + " | XRuns: " + juce::String((int)metrics.xrunCount),
+                   x, y, panel.getWidth()-20, lh, juce::Justification::left);
+        
+        // Avoid unused warnings
+        juce::ignoreUnused(wrote);
     }
 }
 
@@ -104,17 +170,8 @@ void CanvasComponent::mouseDown(const juce::MouseEvent& e)
         audioProcessor.generateImmediateAudioFeedback();
     }
 
-#ifdef PHASE4_EXPERIMENT
-    bool useTestFeeder = audioProcessor.apvts.getParameterAsValue(Params::ParameterIDs::useTestFeeder).getValue();
-    if (!useTestFeeder) {
-        createAndSendMaskColumnPhase4(e.position);
-    } else {
-#endif
-        // Phase 2-3 Validation: Generate MaskColumn with proper timestamping
-        createAndSendMaskColumn(e.position);
-#ifdef PHASE4_EXPERIMENT
-    }
-#endif
+    // Direct RT-safe paint-to-sound (replaces complex accumulator logic)
+    pushMaskFromScreenY(e.position.y);
 
     // Start paint stroke for visual feedback
     currentStroke = PaintStroke{};
@@ -143,17 +200,8 @@ void CanvasComponent::mouseDrag(const juce::MouseEvent& e)
     
     lastMousePos = e.position;
     
-#ifdef PHASE4_EXPERIMENT
-    bool useTestFeeder = audioProcessor.apvts.getParameterAsValue(Params::ParameterIDs::useTestFeeder).getValue();
-    if (!useTestFeeder) {
-        createAndSendMaskColumnPhase4(e.position);
-    } else {
-#endif
-        // Phase 2-3 Validation: Generate MaskColumn for continuous painting
-        createAndSendMaskColumn(e.position);
-#ifdef PHASE4_EXPERIMENT
-    }
-#endif
+    // Direct RT-safe paint-to-sound for continuous painting
+    pushMaskFromScreenY(e.position.y);
     
     // Add point to stroke
     PaintStroke::Point point;
@@ -251,10 +299,8 @@ void CanvasComponent::filesDropped(const juce::StringArray& files, int, int)
 void CanvasComponent::timerCallback()
 {
 #ifdef PHASE4_EXPERIMENT
-    // Check if we need to dispatch accumulated MaskColumn
-    bool useTestFeeder = audioProcessor.apvts.getParameterAsValue(Params::ParameterIDs::useTestFeeder).getValue();
-    
-    if (!useTestFeeder && accumulator_.hasData) {
+    // Check if we need to dispatch accumulated MaskColumn - use actual audio path
+    if (audioProcessor.getCurrentPath() == SpectralCanvasProAudioProcessor::AudioPath::Phase4Synth && accumulator_.hasData) {
         auto now = std::chrono::high_resolution_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastDispatchTime_).count();
         
@@ -285,8 +331,10 @@ void CanvasComponent::timerCallback()
                 mask.values[i] = accumulator_.values[i];
             }
             
-            // Send to audio thread
-            audioProcessor.pushMaskColumn(mask);
+            // Send to audio thread (only if Phase4 path is active)
+            if (audioProcessor.getCurrentPath() == SpectralCanvasProAudioProcessor::AudioPath::Phase4Synth) {
+                audioProcessor.pushMaskColumn(mask);
+            }
             
             // Clear accumulator and update timing
             accumulator_.clear();
@@ -386,12 +434,8 @@ void CanvasComponent::createAndSendMaskColumn(juce::Point<float> mousePos)
         }
     }
     
-    // Send to audio thread via RT-safe queue
-    if (!audioProcessor.getMaskColumnQueue().push(mask))
-    {
-        // Queue full - increment drop counter for debug overlay
-        queueDropCounter.fetch_add(1, std::memory_order_relaxed);
-    }
+    // Send to audio thread via RT-safe queue (with diagnostics)
+    audioProcessor.pushMaskColumn(mask);
 }
 
 #ifdef PHASE4_EXPERIMENT
@@ -406,12 +450,21 @@ inline int CanvasComponent::uiToBinLog(float yNorm, double sampleRate, int fftSi
 {
     // Future: Log-frequency mapping for musical scales
     // For now, fallback to linear
+    juce::ignoreUnused(sampleRate); // avoid MSVC C4100 warning
     const int numBins = fftSize / 2 + 1;
     return uiToBinLinear(yNorm, numBins);
 }
 
 void CanvasComponent::createAndSendMaskColumnPhase4(juce::Point<float> mousePos)
 {
+    // DEBUG: Log that this function is being called
+    juce::Logger::writeToLog("*** PHASE4 PAINT CALLED! ***");
+    
+    // Visual feedback - flash the component briefly to show paint is being called
+    static int paintCallCounter = 0;
+    ++paintCallCounter;
+    juce::Logger::writeToLog("PHASE4 Paint Call #" + juce::String(paintCallCounter));
+    
     // Convert mouse position to spectral coordinates
     const auto spectralPos = screenToSpectral(mousePos);
     const float yNorm = spectralPos.y;  // Already normalized by screenToSpectral
@@ -420,6 +473,9 @@ void CanvasComponent::createAndSendMaskColumnPhase4(juce::Point<float> mousePos)
     const int numBins = 257;  // Fixed for 512 FFT
     const double sampleRate = audioProcessor.getSampleRate();
     const int fftSize = 512;  // From current system
+    
+    // Avoid MSVC C4189 warnings for unused variables in current implementation
+    juce::ignoreUnused(sampleRate, fftSize);
     
     // Map Y to bin index (linear mapping)
     const int centerBin = uiToBinLinear(yNorm, numBins);
@@ -441,6 +497,34 @@ void CanvasComponent::createAndSendMaskColumnPhase4(juce::Point<float> mousePos)
         }
     }
     
+    // IMMEDIATE TEST: Also send direct MaskColumn for debugging
+    MaskColumn testMask;
+    testMask.numBins = numBins;
+    testMask.sequenceNumber = audioProcessor.getNextMaskSequenceNumber();
+    testMask.timestampSamples = 0.0;  // Simple for testing
+    testMask.uiTimestampMicros = 0;
+    testMask.frameIndex = 0;
+    
+    // Clear and set test pattern
+    std::memset(testMask.values, 0, sizeof(testMask.values));
+    for (int offset = -1; offset <= 1; ++offset) {
+        const int binIndex = centerBin + offset;
+        if (binIndex >= 1 && binIndex < numBins - 1) {
+            const float weight = kernel[offset + 1];
+            testMask.values[binIndex] = pressureScaled * weight;
+        }
+    }
+    
+    // TESTING: Add strong test magnitude to ensure synthesis works
+    for (int i = 100; i < 110; ++i) {
+        testMask.values[i] = 0.5f;  // Strong magnitude around 440Hz region
+    }
+    
+    // Direct push for immediate testing  
+    audioProcessor.pushMaskColumn(testMask);
+    
+    juce::Logger::writeToLog("PHASE4: testMask pushed with magnitude 0.5 in bins 100-110");
+    
     // Apply brush size by distributing to nearby bins
     const int brushRadius = static_cast<int>(std::ceil(brushSizeBins * 0.5f));
     for (int offset = -brushRadius; offset <= brushRadius; ++offset) {
@@ -453,5 +537,102 @@ void CanvasComponent::createAndSendMaskColumnPhase4(juce::Point<float> mousePos)
             accumulator_.accumulate(binIndex, value);
         }
     }
+}
+
+void CanvasComponent::pushMaskFromScreenY(float y) noexcept
+{
+    // DEBUG: Log path to understand why paint was blocked
+    juce::Logger::writeToLog("PAINT: getCurrentPath()=" + juce::String(static_cast<int>(audioProcessor.getCurrentPath())));
+    
+    // TESTING: Temporarily bypass path check like we did in pushMaskColumn
+    /*
+    // Only produce in Phase4 mode
+    if (audioProcessor.getCurrentPath() != SpectralCanvasProAudioProcessor::AudioPath::Phase4Synth)
+        return;
+    */
+        
+    static float vals[kNumBins];  // Preallocated scratch buffer (RT-safe)
+    for (int i = 0; i < kNumBins; ++i) vals[i] = 0.0f;
+    
+    // Map Y -> bin index (top = high freq, bottom = low freq)
+    const auto bounds = getLocalBounds().toFloat();
+    const float yNorm = juce::jlimit(0.0f, 1.0f, (y - bounds.getY()) / bounds.getHeight());
+    const int k = juce::jlimit(1, kNumBins - 2, 
+                               static_cast<int>(std::round((1.0f - yNorm) * (kNumBins - 1))));
+                               
+    // 3-tap splat for audibility (same as 'i' key that works)
+    auto add = [&](int kk, float v) { vals[kk] = juce::jmax(vals[kk], v); };
+    add(k - 1, 0.25f);
+    add(k, 0.60f);
+    add(k + 1, 0.25f);
+    
+    // Create MaskColumn and push directly to processor
+    MaskColumn col;
+    col.numBins = kNumBins;
+    col.timestampSamples = juce::Time::getMillisecondCounterHiRes() * 0.001;
+    col.sequenceNumber = audioProcessor.getNextMaskSequenceNumber();
+    col.uiTimestampMicros = static_cast<uint64_t>(juce::Time::getHighResolutionTicks());
+    
+    // Copy values to column
+    for (int i = 0; i < kNumBins; ++i) {
+        col.values[i] = vals[i];
+    }
+    
+    // Push to processor (same API that 'i' key uses)
+    audioProcessor.pushMaskColumn(col);
+    
+    // DIAGNOSTIC: Add queue address and size diagnostics
+    auto& q = audioProcessor.getMaskColumnQueue();
+    
+    // Debug feedback
+    static int paintCallCount = 0;
+    ++paintCallCount;
+    if (paintCallCount % 5 == 1) { // Log every 5th call to be more visible
+        juce::Logger::writeToLog("*** DIRECT PAINT SUCCESS: bin=" + juce::String(k) + " mag=0.60 (call #" + juce::String(paintCallCount) + ") ***");
+        juce::Logger::writeToLog("[UI] MaskQueue addr=" + juce::String::toHexString(reinterpret_cast<uintptr_t>(&q)) + " sizeof(MaskColumn)=" + juce::String(sizeof(MaskColumn)));
+    }
+}
+
+bool CanvasComponent::keyPressed(const juce::KeyPress& key)
+{
+    // DEBUG: Test injection with 'i' key to bypass paint path
+    if (key.getTextCharacter() == 'i') {
+        juce::Logger::writeToLog("*** 'I' KEY PRESSED - INJECTING TEST MASKCOLUMN ***");
+        
+        if (audioProcessor.getCurrentPath() == SpectralCanvasProAudioProcessor::AudioPath::Phase4Synth) {
+            // Create test MaskColumn with strong 440Hz tone
+            MaskColumn testCol;
+            testCol.numBins = 257;
+            testCol.timestampSamples = juce::Time::getMillisecondCounterHiRes() * 0.001;
+            testCol.sequenceNumber = audioProcessor.getNextMaskSequenceNumber();
+            testCol.uiTimestampMicros = juce::Time::getHighResolutionTicksPerSecond();
+            
+            // Clear all values first
+            for (size_t i = 0; i < MaskColumn::MAX_BINS; ++i) {
+                testCol.values[i] = 0.0f;
+            }
+            
+            // Calculate 440Hz bin (k ≈ 440 * fftSize / sampleRate)
+            const double sr = audioProcessor.getSampleRate();
+            const int fftSize = 512;
+            const int k440 = juce::jlimit(1, 256, static_cast<int>(std::round(440.0 * fftSize / sr)));
+            
+            // Add strong magnitude around 440Hz
+            testCol.values[k440 - 1] = 0.25f;
+            testCol.values[k440] = 0.6f;
+            testCol.values[k440 + 1] = 0.25f;
+            
+            juce::Logger::writeToLog("Injecting test column: bin " + juce::String(k440) + " = 0.6, sr=" + juce::String(sr));
+            
+            // Push directly to processor
+            bool success = audioProcessor.pushMaskColumn(testCol);
+            juce::Logger::writeToLog("Injection result: " + juce::String(success ? "SUCCESS" : "FAILED"));
+        } else {
+            juce::Logger::writeToLog("Cannot inject - not in Phase4 mode");
+        }
+        return true;
+    }
+    
+    return Component::keyPressed(key);
 }
 #endif

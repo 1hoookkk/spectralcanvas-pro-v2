@@ -5,6 +5,7 @@
 #include "Core/Params.h"
 #include "Core/MessageBus.h"
 #include "Core/LatencyTracker.h"
+#include "Core/Phase4DebugTap.h"
 #include "DSP/SpectralEngine.h"
 #include "DSP/SampleLoader.h"
 #include "DSP/MaskTestFeeder.h"
@@ -19,9 +20,17 @@ class SpectralCanvasProAudioProcessor : public juce::AudioProcessor,
 {
 public:
     // Audio path tracking enum
-    enum class AudioPath : uint8_t { None, TestFeeder, Phase4Synth, Fallback };
+    // --- Audio path selection (mutually exclusive) ---
+    enum class AudioPath : uint8_t {
+        Silent = 0,
+        TestFeeder,
+        Phase4Synth
+    };
+
     SpectralCanvasProAudioProcessor();
     ~SpectralCanvasProAudioProcessor() override;
+
+    void setAudioPathFromParams(); // call on parameter change thread
 
     // AudioProcessor interface
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
@@ -83,12 +92,38 @@ public:
     // Unified timebase epoch accessor (UI thread)
     uint64_t getEpochSteadyNanos() const { return epochSteadyNanos_.load(std::memory_order_relaxed); }
     
-    // Phase 4 mask column push method (UI thread)
-    bool pushMaskColumn(const MaskColumn& mask) { return maskColumnQueue.push(mask); }
+    // Enhanced MaskColumn with debug sequence
+    struct MaskColumnEx : MaskColumn {
+#if PHASE4_DEBUG_TAP
+        uint64_t debugSeq = 0;
+#endif
+    };
     
-    // UI-safe readout for audio path diagnostics
-    AudioPath getCurrentPath() const noexcept { return currentPath.load(std::memory_order_relaxed); }
-    bool getWroteAudioFlag() const noexcept { return wroteAudioThisBlock.load(std::memory_order_relaxed); }
+    // Phase 4 mask column push method (UI thread) with diagnostics and debug tap
+    bool pushMaskColumn(const MaskColumn& mask);
+    
+    // Debug tap access for overlay
+    Phase4DebugTap& getDebugTap() noexcept { return debugTap_; }
+    
+    // UI-safe readout for audio path diagnostics  
+    AudioPath getCurrentPath() const noexcept { return currentPath_.load(std::memory_order_acquire); }
+    bool getWroteAudioFlag() const noexcept { return wroteAudioFlag_.load(std::memory_order_relaxed); }
+    
+    // Queue diagnostics (UI thread access)
+    uint64_t getMaskPushCount() const noexcept { return maskPushCount_.load(std::memory_order_relaxed); }
+    uint64_t getMaskDropCount() const noexcept { return maskDropCount_.load(std::memory_order_relaxed); }
+    
+#ifdef PHASE4_EXPERIMENT
+    // SpectralEngineStub diagnostics
+    uint64_t getMaskPopCount() const noexcept { return spectralStub.getPopCount(); }
+    float getMaxMagnitude() const noexcept { return spectralStub.getMaxMagnitude(); }
+#endif
+    
+#ifdef PHASE4_EXPERIMENT
+    int getActiveBinCount() const noexcept; // Thread-safe read of active bin count
+    int getNumBins() const noexcept; // Thread-safe read of total bin count for diagnostics
+    uint64_t getPhase4Blocks() const noexcept { return phase4Blocks_.load(std::memory_order_relaxed); }
+#endif
     
     // AudioProcessorValueTreeState::Listener interface
     void parameterChanged(const juce::String& parameterID, float newValue) override;
@@ -98,13 +133,20 @@ public:
 
 private:
     
-    // Audio path tracking state
-    std::atomic<AudioPath> currentPath { AudioPath::None };
-    std::atomic<bool> wroteAudioThisBlock { false };
+    // Audio path tracking state (state machine)
+    std::atomic<AudioPath> currentPath_ { AudioPath::Silent };
+    AudioPath lastPath_ { AudioPath::Silent }; // accessed only from audio thread
+    std::atomic<bool> wroteAudioFlag_ { false }; // set per block on audio thread
     
     // Audio generation helpers
     void generateFallbackBeep(juce::AudioBuffer<float>& buffer, int numSamples) noexcept;
     void fallbackBeep(juce::AudioBuffer<float>& buffer) noexcept;
+
+#ifdef PHASE4_EXPERIMENT
+    // RT-safe state resets for path transitions
+    void rtResetPhase4_() noexcept;
+    void rtResetTestFeeder_() noexcept;
+#endif
     
     // Inter-thread communication (lock-free)
     SpectralDataQueue spectralDataQueue;
@@ -135,6 +177,9 @@ private:
     std::atomic<float> oscGain_{0.2f};
     std::atomic<int> scaleType_{1};  // 0=Chromatic, 1=Major, 2=Minor
     std::atomic<int> rootNote_{0};   // 0-11
+    
+    // Diagnostic counter to prove Phase4 branch executes
+    std::atomic<uint64_t> phase4Blocks_{0};
 #endif
     
     // Phase 2-3 validation infrastructure
@@ -142,6 +187,13 @@ private:
     std::atomic<uint64_t> processedSampleCount_{0};
     std::atomic<uint64_t> epochSteadyNanos_{0};        // Unified timebase epoch
     std::atomic<uint32_t> nextMaskSequenceNumber_{1};
+    
+    // Phase 4 queue diagnostics  
+    std::atomic<uint64_t> maskPushCount_{0};
+    std::atomic<uint64_t> maskDropCount_{0};
+    
+    // Debug tap for SPSC integrity diagnosis
+    Phase4DebugTap debugTap_;
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectralCanvasProAudioProcessor)
 };

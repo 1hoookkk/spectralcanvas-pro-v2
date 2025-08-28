@@ -33,6 +33,11 @@ public:
     // Statistics for performance monitoring
     int getActiveBinCount() const noexcept { return activeBinCount_; }
     int getCurrentStride() const noexcept { return currentStride_; }
+    int getNumBins() const noexcept { return numBins_; }  // Expose for diagnostics
+    
+    // Queue diagnostics (thread-safe accessors)
+    uint64_t getPopCount() const noexcept { return popCount_.load(std::memory_order_relaxed); }
+    float getMaxMagnitude() const noexcept { return maxMagnitude_.load(std::memory_order_relaxed); }
 
 private:
     // Audio parameters
@@ -44,9 +49,9 @@ private:
     // Performance control
     static constexpr int minStride_ = 1;
     static constexpr int maxStride_ = 4;
-    int baseStride_ = 3;  // User-configurable base
-    int currentStride_ = 3;  // Adaptive current stride
-    static constexpr float eps_ = 1e-5f;
+    int baseStride_ = 2;  // More permissive for bring-up
+    int currentStride_ = 2;  // More permissive for bring-up
+    static constexpr float eps_ = 2e-6f;  // Lower threshold for audibility
     
     // Pre-allocated RT-safe buffers
     juce::HeapBlock<float> magnitudes_;     // Current target magnitudes [numBins]
@@ -56,6 +61,10 @@ private:
     
     // Performance tracking
     int activeBinCount_ = 0;
+    
+    // Queue diagnostics atomics (RT-safe)
+    std::atomic<uint64_t> popCount_{0};
+    std::atomic<float> maxMagnitude_{0.0f};
     
     // Smoothing parameters
     static constexpr float smoothingRate_ = 0.2f;   // τ≈5 blocks
