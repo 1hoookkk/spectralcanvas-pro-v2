@@ -49,33 +49,36 @@ void CanvasComponent::paint(juce::Graphics& g)
         g.drawText(juce::String::formatted("Test Mode: %s", testActive ? "ACTIVE" : "OFF"), 
                    8, 22, 200, 14, juce::Justification::left);
         
-#ifdef PHASE4_EXPERIMENT
-        // Show which audio path is active
-        bool useTestFeeder = audioProcessor.apvts.getParameterAsValue(Params::ParameterIDs::useTestFeeder).getValue();
-        const char* activePath = useTestFeeder ? "TestFeeder" : "Phase4";
-        g.setColour(useTestFeeder ? juce::Colours::cyan : juce::Colours::yellow);
-        g.drawText(juce::String::formatted("Audio Path: %s", activePath), 
-                   220, 22, 200, 14, juce::Justification::left);
-#endif
+        // Show active audio path and write status
+        auto path = audioProcessor.getCurrentPath();
+        const char* pathStr = (path == SpectralCanvasProAudioProcessor::AudioPath::TestFeeder) ? "TestFeeder" :
+                              (path == SpectralCanvasProAudioProcessor::AudioPath::Phase4Synth) ? "Phase4 Synth" :
+                              (path == SpectralCanvasProAudioProcessor::AudioPath::Fallback) ? "Fallback" : "None";
         
-        // Latency metrics
+        const bool wrote = audioProcessor.getWroteAudioFlag();
+        
+        g.setColour(juce::Colours::yellow);
+        g.drawText(juce::String("Audio Path: ") + pathStr + (wrote ? "  (writing)" : "  (silent)"),
+                   8, 50, 400, 14, juce::Justification::left);
+        
+        // Latency metrics  
         g.setColour(metrics.medianLatencyMs <= 5.0f ? juce::Colours::lime : juce::Colours::orange);
         g.drawText(juce::String::formatted("Latency: %.1fms / %.1fms (med/p95)", 
                    metrics.medianLatencyMs, metrics.p95LatencyMs),
-                   8, 36, 400, 14, juce::Justification::left);
+                   8, 64, 400, 14, juce::Justification::left);
         
         // Queue and performance stats
         g.setColour(metrics.dropCount == 0 ? juce::Colours::lime : juce::Colours::red);
         g.drawText(juce::String::formatted("Queue: %zu/%d | Drops: %zu | Local Drops: %d",
                    metrics.queueDepth, 8, metrics.dropCount, 
                    queueDropCounter.load(std::memory_order_relaxed)),
-                   8, 50, 400, 14, juce::Justification::left);
+                   8, 78, 400, 14, juce::Justification::left);
         
         // Frame rate and audio stats
         g.setColour(currentFPS >= 58.0f ? juce::Colours::lime : juce::Colours::yellow);
         g.drawText(juce::String::formatted("FPS: %.1f | Processed Samples: %llu | XRuns: %zu",
                    currentFPS, metrics.processedSamples, metrics.xrunCount),
-                   8, 64, 400, 14, juce::Justification::left);
+                   8, 92, 400, 14, juce::Justification::left);
         
         // Sample rate and block size
         g.setColour(juce::Colours::lightgrey);

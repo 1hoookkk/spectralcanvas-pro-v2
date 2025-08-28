@@ -97,6 +97,10 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     juce::ignoreUnused(midiMessages);
     juce::ScopedNoDenormals noDenormals;
     
+    // Initialize path tracking for this block
+    wroteAudioThisBlock.store(false, std::memory_order_relaxed);
+    currentPath.store(AudioPath::None, std::memory_order_relaxed);
+    
     const int totalNumInputChannels = getTotalNumInputChannels();
     const int totalNumOutputChannels = getTotalNumOutputChannels();
     const int numSamples = buffer.getNumSamples();
@@ -115,8 +119,93 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     // ---- SELECT ONE AUDIO PATH ONLY ----
     bool useTestFeeder = useTestFeeder_.load(std::memory_order_relaxed);
 
+    // ---- TEST FEEDER ----
+    if (useTestFeeder) {
+        // Test feeder path (default): spectral engine with test tones
+        // Process mask column updates from GPU thread (RT-safe)
+        static MaskColumn currentMaskColumn; // Static to keep mask data alive
+        while (auto maskColumn = maskColumnQueue.pop())
+        {
+            currentMaskColumn = *maskColumn; // Copy mask data
+            
+            // Calculate latency for Phase 2-3 validation (per unified timebase spec)
+            if (currentMaskColumn.timestampSamples > 0.0)
+            {
+                uint64_t currentAudioSamples = processedSampleCount_.load(std::memory_order_relaxed);
+                uint64_t uiTimestampSamples = static_cast<uint64_t>(currentMaskColumn.timestampSamples);
+                
+                if (currentAudioSamples >= uiTimestampSamples)
+                {
+                    uint64_t paintLatencySamples = currentAudioSamples - uiTimestampSamples;
+                    float latencyMs = (paintLatencySamples * 1000.0f) / static_cast<float>(currentSampleRate);
+                    
+                    // Convert to microseconds for RTLatencyTracker
+                    uint32_t latencyMicros = static_cast<uint32_t>(latencyMs * 1000.0f);
+                    latencyTracker_.recordLatency(latencyMicros);
+                }
+            }
+            
+            if (spectralEngine)
+            {
+                spectralEngine->updateCurrentMask(&currentMaskColumn);
+            }
+        }
+        
+        // Process test mask columns for paint-to-audio validation (RT-safe)
+        MaskColumn testMask;
+        while (maskTestFeeder.tryPopMask(testMask))
+        {
+            if (spectralEngine && spectralEngine->isInitialized())
+            {
+                spectralEngine->applyMaskColumn(testMask);
+            }
+        }
+        
+        // RT-safe spectral processing - MUST write into buffer
+        if (spectralEngine && spectralEngine->isInitialized())
+        {
+            // Process first channel through spectral engine
+            const float* inputData = buffer.getReadPointer(0);
+            float* outputData = buffer.getWritePointer(0);
+            
+            spectralEngine->processBlock(inputData, outputData, numSamples);
+            
+            // Copy to other channels if stereo
+            for (int channel = 1; channel < totalNumOutputChannels; ++channel)
+            {
+                buffer.copyFrom(channel, 0, buffer, 0, 0, numSamples);
+            }
+            
+            // Extract spectral data for visualization
+            if (spectralDataQueue.hasSpaceAvailable())
+            {
+                SpectralFrame frame;
+                if (spectralEngine->extractSpectralFrame(frame))
+                {
+                    spectralDataQueue.push(frame);
+                }
+            }
+        }
+        else
+        {
+            // Safety fallback: 220Hz beep to ensure we always hear something
+            generateFallbackBeep(buffer, numSamples);
+        }
+        
+        currentPath.store(AudioPath::TestFeeder, std::memory_order_relaxed);
+        
+        // Quick write check (cheap): look at first sample of ch0
+        if (totalNumOutputChannels > 0 && numSamples > 0 && buffer.getReadPointer(0)[0] != 0.0f)
+            wroteAudioThisBlock.store(true, std::memory_order_relaxed);
+        
+        // Update sample counter and return
+        processedSampleCount_.fetch_add(numSamples, std::memory_order_relaxed);
+        return;
+    }
+
 #ifdef PHASE4_EXPERIMENT
-    if (!useTestFeeder) {
+    // ---- PHASE 4 SYNTH ----
+    if (true) { // Always enter this path when testFeeder is false
         // Phase 4 experimental path: oscillator bank with key filter
         // Pop all mask columns into spectral stub
         spectralStub.popAllMaskColumnsInto(maskColumnQueue);
@@ -130,84 +219,22 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
         const float gain = oscGain_.load(std::memory_order_relaxed);
         spectralStub.process(buffer, gain);
         
+        currentPath.store(AudioPath::Phase4Synth, std::memory_order_relaxed);
+        if (totalNumOutputChannels > 0 && numSamples > 0 && buffer.getReadPointer(0)[0] != 0.0f)
+            wroteAudioThisBlock.store(true, std::memory_order_relaxed);
+        
         // Update sample counter and return early
         processedSampleCount_.fetch_add(numSamples, std::memory_order_relaxed);
         return;
     }
 #endif
 
-    // Test feeder path (default): spectral engine with test tones
-    // Process mask column updates from GPU thread (RT-safe)
-    static MaskColumn currentMaskColumn; // Static to keep mask data alive
-    while (auto maskColumn = maskColumnQueue.pop())
-    {
-        currentMaskColumn = *maskColumn; // Copy mask data
-        
-        // Calculate latency for Phase 2-3 validation (per unified timebase spec)
-        if (currentMaskColumn.timestampSamples > 0.0)
-        {
-            uint64_t currentAudioSamples = processedSampleCount_.load(std::memory_order_relaxed);
-            uint64_t uiTimestampSamples = static_cast<uint64_t>(currentMaskColumn.timestampSamples);
-            
-            if (currentAudioSamples >= uiTimestampSamples)
-            {
-                uint64_t paintLatencySamples = currentAudioSamples - uiTimestampSamples;
-                float latencyMs = (paintLatencySamples * 1000.0f) / static_cast<float>(currentSampleRate);
-                
-                // Convert to microseconds for RTLatencyTracker
-                uint32_t latencyMicros = static_cast<uint32_t>(latencyMs * 1000.0f);
-                latencyTracker_.recordLatency(latencyMicros);
-            }
-        }
-        
-        if (spectralEngine)
-        {
-            spectralEngine->updateCurrentMask(&currentMaskColumn);
-        }
-    }
+    // ---- FALLBACK BEEP (safety) ----
+    fallbackBeep(buffer); // tiny 220 Hz so we always hear something
+    currentPath.store(AudioPath::Fallback, std::memory_order_relaxed);
+    if (totalNumOutputChannels > 0 && numSamples > 0 && buffer.getReadPointer(0)[0] != 0.0f)
+        wroteAudioThisBlock.store(true, std::memory_order_relaxed);
     
-    // Process test mask columns for paint-to-audio validation (RT-safe)
-    MaskColumn testMask;
-    while (maskTestFeeder.tryPopMask(testMask))
-    {
-        if (spectralEngine && spectralEngine->isInitialized())
-        {
-            spectralEngine->applyMaskColumn(testMask);
-        }
-    }
-    
-    // RT-safe spectral processing - MUST write into buffer
-    if (spectralEngine && spectralEngine->isInitialized())
-    {
-        // Process first channel through spectral engine
-        const float* inputData = buffer.getReadPointer(0);
-        float* outputData = buffer.getWritePointer(0);
-        
-        spectralEngine->processBlock(inputData, outputData, numSamples);
-        
-        // Copy to other channels if stereo
-        for (int channel = 1; channel < totalNumOutputChannels; ++channel)
-        {
-            buffer.copyFrom(channel, 0, buffer, 0, 0, numSamples);
-        }
-        
-        // Extract spectral data for visualization
-        if (spectralDataQueue.hasSpaceAvailable())
-        {
-            SpectralFrame frame;
-            if (spectralEngine->extractSpectralFrame(frame))
-            {
-                spectralDataQueue.push(frame);
-            }
-        }
-    }
-    else
-    {
-        // Safety fallback: 220Hz beep to ensure we always hear something
-        generateFallbackBeep(buffer, numSamples);
-    }
-    
-    // Update sample counter for latency calculation
     processedSampleCount_.fetch_add(numSamples, std::memory_order_relaxed);
     
 #if JUCE_DEBUG
@@ -221,6 +248,22 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
         }
     }
 #endif
+}
+
+// Minimal fallback beep generator (RT-safe)
+void SpectralCanvasProAudioProcessor::fallbackBeep(juce::AudioBuffer<float>& buffer) noexcept
+{
+    static float ph = 0.0f;
+    const float inc = float(2.0 * juce::MathConstants<double>::pi * 220.0 / getSampleRate());
+    const int ns = buffer.getNumSamples();
+    for (int n = 0; n < ns; ++n) {
+        ph += inc; 
+        if (ph > juce::MathConstants<float>::twoPi) 
+            ph -= juce::MathConstants<float>::twoPi;
+        const float s = 0.02f * std::sin(ph);
+        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+            buffer.getWritePointer(ch)[n] += s;
+    }
 }
 
 // Safety fallback audio generator (RT-safe)

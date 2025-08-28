@@ -18,6 +18,8 @@ class SpectralCanvasProAudioProcessor : public juce::AudioProcessor,
                                        public juce::AudioProcessorValueTreeState::Listener
 {
 public:
+    // Audio path tracking enum
+    enum class AudioPath : uint8_t { None, TestFeeder, Phase4Synth, Fallback };
     SpectralCanvasProAudioProcessor();
     ~SpectralCanvasProAudioProcessor() override;
 
@@ -84,6 +86,10 @@ public:
     // Phase 4 mask column push method (UI thread)
     bool pushMaskColumn(const MaskColumn& mask) { return maskColumnQueue.push(mask); }
     
+    // UI-safe readout for audio path diagnostics
+    AudioPath getCurrentPath() const noexcept { return currentPath.load(std::memory_order_relaxed); }
+    bool getWroteAudioFlag() const noexcept { return wroteAudioThisBlock.load(std::memory_order_relaxed); }
+    
     // AudioProcessorValueTreeState::Listener interface
     void parameterChanged(const juce::String& parameterID, float newValue) override;
 
@@ -92,8 +98,13 @@ public:
 
 private:
     
+    // Audio path tracking state
+    std::atomic<AudioPath> currentPath { AudioPath::None };
+    std::atomic<bool> wroteAudioThisBlock { false };
+    
     // Audio generation helpers
     void generateFallbackBeep(juce::AudioBuffer<float>& buffer, int numSamples) noexcept;
+    void fallbackBeep(juce::AudioBuffer<float>& buffer) noexcept;
     
     // Inter-thread communication (lock-free)
     SpectralDataQueue spectralDataQueue;
