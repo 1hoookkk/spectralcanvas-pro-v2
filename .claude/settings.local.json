@@ -156,7 +156,12 @@
       "Bash(\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command \"Get-ChildItem -Path ''build'' -Recurse -Name ''*.sln''\")",
       "Bash(\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command \"Get-ChildItem -Path ''build'' -Recurse -Include ''*.exe'', ''*.vst3'' | Where-Object { $_LastWriteTime -gt (Get-Date).AddMinutes(-2) } | Select-Object FullName, LastWriteTime\")",
       "Bash(\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command \"Get-ChildItem -Path ''build\\SpectralCanvasPro_artefacts'' -Recurse | Where-Object { $_LastWriteTime -gt (Get-Date).AddMinutes(-5) } | Select-Object FullName, LastWriteTime\")",
-      "Bash(\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command \"if (Test-Path ''build\\SpectralCanvasPro_artefacts\\RelWithDebInfo\\Standalone\\spectralCanvas Pro.exe'') { Write-Host ''FOUND: Standalone EXE exists''; Get-Item ''build\\SpectralCanvasPro_artefacts\\RelWithDebInfo\\Standalone\\spectralCanvas Pro.exe'' | Select-Object Name, LastWriteTime, Length } else { Write-Host ''NOT FOUND: Need to build first'' }\")"
+      "Bash(\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command \"if (Test-Path ''build\\SpectralCanvasPro_artefacts\\RelWithDebInfo\\Standalone\\spectralCanvas Pro.exe'') { Write-Host ''FOUND: Standalone EXE exists''; Get-Item ''build\\SpectralCanvasPro_artefacts\\RelWithDebInfo\\Standalone\\spectralCanvas Pro.exe'' | Select-Object Name, LastWriteTime, Length } else { Write-Host ''NOT FOUND: Need to build first'' }\")",
+      "Bash(\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command \"Get-Item ''build\\SpectralCanvasPro_artefacts\\RelWithDebInfo\\Standalone\\spectralCanvas Pro.exe'' | Select-Object Name, LastWriteTime, Length\")",
+      "Bash(\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command \"Remove-Item -Path ''build'' -Recurse -Force -ErrorAction SilentlyContinue; Write-Host ''Build directory cleaned''\")",
+      "Bash(\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command \"Get-ChildItem -Path ''build'' -Recurse -Include ''*.exe'', ''*.vst3'' | Select-Object FullName, LastWriteTime, Length\")",
+      "Bash(\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command \"if (Test-Path ''build\\SpectralCanvasPro_artefacts'') { Get-ChildItem ''build\\SpectralCanvasPro_artefacts'' -Name } else { Write-Host ''Artifacts directory not found'' }\")",
+      "Bash(\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command \"Get-ChildItem -Path ''build'' -Recurse -Filter ''*Standalone*'' | Select-Object FullName\")"
     ],
     "deny": [],
     "ask": [],

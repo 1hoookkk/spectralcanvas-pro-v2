@@ -101,19 +101,23 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     const int totalNumOutputChannels = getTotalNumOutputChannels();
     const int numSamples = buffer.getNumSamples();
     
-    // Clear ALL output channels at the start
-    buffer.clear();
+    // Clear any output channels that don't have input data
+    for (int ch = totalNumInputChannels; ch < totalNumOutputChannels; ++ch)
+        buffer.clear(ch, 0, numSamples);
+
+    // Process parameter updates from UI thread (RT-safe)
+    while (auto paramUpdate = parameterQueue.pop())
+    {
+        // Apply parameter changes with sample-accurate timing
+        // TODO: Implement parameter smoothing and application
+    }
+
+    // ---- SELECT ONE AUDIO PATH ONLY ----
+    bool useTestFeeder = useTestFeeder_.load(std::memory_order_relaxed);
 
 #ifdef PHASE4_EXPERIMENT
-    // Phase 4 experimental path: oscillator bank with key filter
-    if (!useTestFeeder_.load(std::memory_order_relaxed)) {
-        // Process parameter updates from UI thread (RT-safe)
-        while (auto paramUpdate = parameterQueue.pop())
-        {
-            // Apply parameter changes with sample-accurate timing
-            // TODO: Implement parameter smoothing and application
-        }
-        
+    if (!useTestFeeder) {
+        // Phase 4 experimental path: oscillator bank with key filter
         // Pop all mask columns into spectral stub
         spectralStub.popAllMaskColumnsInto(maskColumnQueue);
         
@@ -122,7 +126,7 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
             keyFilter.apply(spectralStub.getMagnitudesWritePtr(), 257);
         }
         
-        // Render oscillator bank
+        // Render oscillator bank - MUST write into buffer
         const float gain = oscGain_.load(std::memory_order_relaxed);
         spectralStub.process(buffer, gain);
         
@@ -132,14 +136,7 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     }
 #endif
 
-    // Test feeder path - fallback for Phase 4 or primary for Phase 2-3
-    // Process parameter updates from UI thread (RT-safe)
-    while (auto paramUpdate = parameterQueue.pop())
-    {
-        // Apply parameter changes with sample-accurate timing
-        // TODO: Implement parameter smoothing and application
-    }
-    
+    // Test feeder path (default): spectral engine with test tones
     // Process mask column updates from GPU thread (RT-safe)
     static MaskColumn currentMaskColumn; // Static to keep mask data alive
     while (auto maskColumn = maskColumnQueue.pop())
@@ -179,7 +176,7 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
         }
     }
     
-    // RT-safe spectral processing (process mono for now)
+    // RT-safe spectral processing - MUST write into buffer
     if (spectralEngine && spectralEngine->isInitialized())
     {
         // Process first channel through spectral engine
@@ -206,7 +203,8 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     }
     else
     {
-        // Pass through unchanged if spectral engine not ready
+        // Safety fallback: 220Hz beep to ensure we always hear something
+        generateFallbackBeep(buffer, numSamples);
     }
     
     // Update sample counter for latency calculation
@@ -215,17 +213,38 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
 #if JUCE_DEBUG
     // Health check: detect silent audio in debug builds
     float rmsLevel = buffer.getRMSLevel(0, 0, numSamples);
-    if (rmsLevel < 1e-6f && !useTestFeeder_.load(std::memory_order_relaxed)) {
-        // Add a single-sample impulse for debugging (very quiet)
-        if (numSamples > 0) {
-            buffer.setSample(0, 0, 0.001f);  // Tiny click to verify audio path
-        }
+    if (rmsLevel < 1e-6f) {
         static int silenceCounter = 0;
         if (++silenceCounter % 480 == 0) {  // Log every 10ms at 48kHz
-            juce::Logger::writeToLog("Phase 4: Audio path silent (health check triggered)");
+            const char* pathName = useTestFeeder ? "TestFeeder" : "Phase4";
+            juce::Logger::writeToLog(juce::String::formatted("Audio path (%s) producing silence", pathName));
         }
     }
 #endif
+}
+
+// Safety fallback audio generator (RT-safe)
+void SpectralCanvasProAudioProcessor::generateFallbackBeep(juce::AudioBuffer<float>& buffer, int numSamples) noexcept
+{
+    static float phase = 0.0f;
+    const float frequency = 220.0f; // A3 note
+    const float phaseIncrement = frequency * 2.0f * juce::MathConstants<float>::pi / static_cast<float>(currentSampleRate);
+    const float amplitude = 0.1f; // Moderate volume
+    
+    for (int sample = 0; sample < numSamples; ++sample)
+    {
+        const float sampleValue = std::sin(phase) * amplitude;
+        
+        // Write to all output channels
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+        {
+            buffer.setSample(channel, sample, sampleValue);
+        }
+        
+        phase += phaseIncrement;
+        if (phase >= 2.0f * juce::MathConstants<float>::pi)
+            phase -= 2.0f * juce::MathConstants<float>::pi;
+    }
 }
 
 #ifdef PHASE4_EXPERIMENT

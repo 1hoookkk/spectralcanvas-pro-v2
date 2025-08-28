@@ -49,6 +49,15 @@ void CanvasComponent::paint(juce::Graphics& g)
         g.drawText(juce::String::formatted("Test Mode: %s", testActive ? "ACTIVE" : "OFF"), 
                    8, 22, 200, 14, juce::Justification::left);
         
+#ifdef PHASE4_EXPERIMENT
+        // Show which audio path is active
+        bool useTestFeeder = audioProcessor.apvts.getParameterAsValue(Params::ParameterIDs::useTestFeeder).getValue();
+        const char* activePath = useTestFeeder ? "TestFeeder" : "Phase4";
+        g.setColour(useTestFeeder ? juce::Colours::cyan : juce::Colours::yellow);
+        g.drawText(juce::String::formatted("Audio Path: %s", activePath), 
+                   220, 22, 200, 14, juce::Justification::left);
+#endif
+        
         // Latency metrics
         g.setColour(metrics.medianLatencyMs <= 5.0f ? juce::Colours::lime : juce::Colours::orange);
         g.drawText(juce::String::formatted("Latency: %.1fms / %.1fms (med/p95)", 

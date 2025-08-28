@@ -92,6 +92,9 @@ public:
 
 private:
     
+    // Audio generation helpers
+    void generateFallbackBeep(juce::AudioBuffer<float>& buffer, int numSamples) noexcept;
+    
     // Inter-thread communication (lock-free)
     SpectralDataQueue spectralDataQueue;
     ParameterQueue parameterQueue;
