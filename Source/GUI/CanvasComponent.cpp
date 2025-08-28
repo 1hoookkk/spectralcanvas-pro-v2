@@ -1,251 +1,127 @@
 #include "CanvasComponent.h"
-#include "TopStrip.h"
-#include "BottomBar.h"
-#include "../Viz/backends/D3D11Renderer.h"
+#include "../Core/Params.h"
+#include <chrono>
 
 CanvasComponent::CanvasComponent(SpectralCanvasProAudioProcessor& processor)
     : audioProcessor(processor)
 {
-    // GPU renderer will be initialized lazily in visibilityChanged()
-    juce::Logger::writeToLog("CanvasComponent constructor started");
-    
-    // Create floating UI components
-    topStrip = std::make_unique<TopStrip>(audioProcessor, *this);
-    bottomBar = std::make_unique<BottomBar>(audioProcessor, *this);
-    
-    addAndMakeVisible(*topStrip);
-    addAndMakeVisible(*bottomBar);
-    
-    // Start 60fps timer for smooth nebula animation
-    startTimer(16); // ~60fps (16.67ms)
-    
-    juce::Logger::writeToLog("CanvasComponent constructor completed");
+    setOpaque(true);
+    startTimer(16); // 60fps
     
     // Initialize stroke system
     currentStroke.isActive = false;
-    completedStrokes.reserve(100); // Preallocate for performance
+    completedStrokes.reserve(100);
+    
+#ifdef PHASE4_EXPERIMENT
+    // Initialize accumulator and timing
+    accumulator_.clear();
+    lastDispatchTime_ = std::chrono::high_resolution_clock::now();
+#endif
 }
 
-CanvasComponent::~CanvasComponent()
-{
-    stopTimer();
-    gpuRenderer.reset();
-}
+CanvasComponent::~CanvasComponent() = default;
 
 void CanvasComponent::paint(juce::Graphics& g)
 {
-    // GPU renderer handles the main spectral visualization
-    if (gpuRenderer && gpuRenderer->isInitialized())
+    g.fillAll(juce::Colours::black);
+
+    // Simple cursor
+    if (lastMousePos.x >= 0.0f)
     {
-        if (!gpuRenderer->checkDeviceStatus())
-        {
-            // Device lost or invalid; shut down gracefully
-            gpuRenderer->shutdown();
-            gpuRenderer.reset();
-        }
+        const float r = currentBrushSize * 0.5f;
+        g.setColour(juce::Colours::white.withAlpha(0.8f));
+        g.drawEllipse(lastMousePos.x - r, lastMousePos.y - r, r * 2.0f, r * 2.0f, 1.0f);
     }
 
-    if (gpuRenderer && gpuRenderer->isInitialized())
+    // Phase 2-3 Validation Debug Overlay
+    bool debugEnabled = audioProcessor.apvts.getParameterAsValue(Params::ParameterIDs::debugOverlayEnabled).getValue();
+    if (debugEnabled)
     {
-        try
-        {
-            gpuRenderer->beginFrame();
-            gpuRenderer->renderSpectralVisualization();
-            gpuRenderer->renderGestureTrails();
-            gpuRenderer->renderParticleSystem();
-            gpuRenderer->endFrame();
-            gpuRenderer->present();
-        }
-        catch (...)
-        {
-            // GPU rendering failed, fall back to software
-            gpuRenderer.reset();
-            paintSoftwareFallback(g);
-            return;
-        }
-    }
-    else
-    {
-        // Software fallback - living nebula-style background
-        paintSoftwareFallback(g);
-    }
-    
-    // Overlay grid if enabled
-    if (gridVisible)
-    {
-        drawGridOverlay(g);
-    }
-    
-    // Draw brush cursor
-    if (isMouseOverOrDragging())
-    {
-        drawBrushCursor(g);
-    }
-    
-    // File drag feedback
-    if (isFileDragOver)
-    {
-        g.setColour(getNebulaAccentColor().withAlpha(0.3f));
-        g.fillRoundedRectangle(getLocalBounds().toFloat(), 8.0f);
+        auto metrics = audioProcessor.getPerformanceMetrics();
         
-        g.setColour(getNebulaAccentColor());
-        g.drawRoundedRectangle(getLocalBounds().toFloat(), 8.0f, 2.0f);
+        g.setColour(juce::Colours::lime);
+        g.setFont(juce::FontOptions(10.0f, juce::Font::bold));
         
-        g.setFont(juce::FontOptions(24.0f));
-        g.drawText("Drop audio file to resynthesize", getLocalBounds(), juce::Justification::centred);
-    }
-}
-
-void CanvasComponent::paintSoftwareFallback(juce::Graphics& g)
-{
-    // Create living nebula background (purple → cyan)
-    const int width = getWidth();
-    const int height = getHeight();
-    
-    // Base nebula gradient
-    juce::ColourGradient gradient(
-        juce::Colour(0xff4a148c),  // Deep purple
-        0.0f, height * 0.8f,
-        juce::Colour(0xff00bcd4),  // Cyan
-        0.0f, height * 0.2f,
-        false
-    );
-    gradient.addColour(0.3, juce::Colour(0xff7b1fa2)); // Purple mid
-    gradient.addColour(0.7, juce::Colour(0xff26c6da)); // Light cyan
-    
-    g.setGradientFill(gradient);
-    g.fillAll();
-    
-    // Add animated spectral bars (if we have spectral data)
-    auto& spectralQueue = audioProcessor.getSpectralDataQueue();
-    if (spectralQueue.hasDataAvailable())
-    {
-        // Process latest spectral frame
-        while (auto frame = spectralQueue.pop())
-        {
-            // Draw spectral bins as nebula texture
-            const int numBins = SpectralFrame::NUM_BINS;
-            const float binWidth = (float)width / numBins;
-            
-            for (int bin = 0; bin < numBins; ++bin)
-            {
-                float magnitude = frame->magnitude[bin];
-                float frequency = (float)bin / numBins;
-                
-                // Convert magnitude to visual intensity
-                float dbMagnitude = 20.0f * std::log10(std::max(magnitude, 1e-6f));
-                float brightness = juce::jlimit(0.0f, 1.0f, (dbMagnitude + 80.0f) / 80.0f);
-                
-                // Frequency-based color (purple low → cyan high)
-                float hue = juce::jlimit(0.0f, 1.0f, 0.76f - frequency * 0.24f); // 0.76=purple, 0.52=cyan
-                juce::Colour binColor = juce::Colour::fromHSV(hue, 0.9f, brightness * 0.8f, brightness * 0.6f);
-                
-                g.setColour(binColor);
-                float x = bin * binWidth;
-                float barHeight = brightness * height * 0.3f; // Max 30% of height
-                g.fillRect(x, height - barHeight, binWidth, barHeight);
-            }
-        }
-    }
-    else
-    {
-        // No audio data - show gentle animated stars/particles
-        static float starPhase = 0.0f;
-        starPhase += 0.02f;
+        // Title and basic status
+        g.drawText("Phase 2-3 Validation Metrics", 8, 8, 400, 14, juce::Justification::left);
         
-        g.setColour(juce::Colours::white.withAlpha(0.4f));
-        for (int i = 0; i < 50; ++i)
-        {
-            float x = (i * 37) % width; // Pseudo-random distribution
-            float y = (i * 73) % height;
-            float twinkle = 0.5f + 0.3f * std::sin(starPhase + i * 0.5f);
-            
-            g.setColour(juce::Colours::white.withAlpha(twinkle * 0.6f));
-            g.fillEllipse(x - 1, y - 1, 2, 2);
-        }
-    }
-    
-    // Draw completed strokes as glowing trails
-    for (const auto& stroke : completedStrokes)
-    {
-        if (stroke.points.size() < 2) continue;
+        bool testActive = audioProcessor.apvts.getParameterAsValue(Params::ParameterIDs::testModeActive).getValue();
+        g.drawText(juce::String::formatted("Test Mode: %s", testActive ? "ACTIVE" : "OFF"), 
+                   8, 22, 200, 14, juce::Justification::left);
         
-        juce::Path strokePath;
-        strokePath.startNewSubPath(stroke.points[0].position);
-        for (size_t i = 1; i < stroke.points.size(); ++i)
-        {
-            strokePath.lineTo(stroke.points[i].position);
-        }
+        // Latency metrics
+        g.setColour(metrics.medianLatencyMs <= 5.0f ? juce::Colours::lime : juce::Colours::orange);
+        g.drawText(juce::String::formatted("Latency: %.1fms / %.1fms (med/p95)", 
+                   metrics.medianLatencyMs, metrics.p95LatencyMs),
+                   8, 36, 400, 14, juce::Justification::left);
         
-        // Stroke glow effect
-        g.setColour(getNebulaAccentColor().withAlpha(0.3f));
-        g.strokePath(strokePath, juce::PathStrokeType(stroke.brushSize * 0.5f));
+        // Queue and performance stats
+        g.setColour(metrics.dropCount == 0 ? juce::Colours::lime : juce::Colours::red);
+        g.drawText(juce::String::formatted("Queue: %zu/%d | Drops: %zu | Local Drops: %d",
+                   metrics.queueDepth, 8, metrics.dropCount, 
+                   queueDropCounter.load(std::memory_order_relaxed)),
+                   8, 50, 400, 14, juce::Justification::left);
         
-        g.setColour(getNebulaAccentColor().withAlpha(0.8f));
-        g.strokePath(strokePath, juce::PathStrokeType(2.0f));
-    }
-    
-    // Draw active stroke
-    if (currentStroke.isActive && currentStroke.points.size() > 1)
-    {
-        juce::Path activePath;
-        activePath.startNewSubPath(currentStroke.points[0].position);
-        for (size_t i = 1; i < currentStroke.points.size(); ++i)
-        {
-            activePath.lineTo(currentStroke.points[i].position);
-        }
+        // Frame rate and audio stats
+        g.setColour(currentFPS >= 58.0f ? juce::Colours::lime : juce::Colours::yellow);
+        g.drawText(juce::String::formatted("FPS: %.1f | Processed Samples: %llu | XRuns: %zu",
+                   currentFPS, metrics.processedSamples, metrics.xrunCount),
+                   8, 64, 400, 14, juce::Justification::left);
         
-        g.setColour(juce::Colours::white.withAlpha(0.9f));
-        g.strokePath(activePath, juce::PathStrokeType(3.0f));
+        // Sample rate and block size
+        g.setColour(juce::Colours::lightgrey);
+        g.drawText(juce::String::formatted("SR: %.1fkHz | Block: %d samples",
+                   audioProcessor.getSampleRate() / 1000.0, audioProcessor.getBlockSize()),
+                   8, 78, 400, 14, juce::Justification::left);
     }
 }
 
 void CanvasComponent::resized()
 {
-    const int width = getWidth();
-    const int height = getHeight();
-    
-    // Resize GPU renderer
-    if (gpuRenderer)
-    {
-        gpuRenderer->resizeBuffers(width, height);
-    }
-    
-    // Position floating UI components
-    const int topStripHeight = 60;
-    const int bottomBarHeight = 50;
-    const int margin = 12;
-    
-    // TopStrip floats at top with margin
-    topStrip->setBounds(margin, margin, width - 2 * margin, topStripHeight);
-    
-    // BottomBar floats at bottom with margin  
-    bottomBar->setBounds(margin, height - bottomBarHeight - margin, 
-                        width - 2 * margin, bottomBarHeight);
+    // No-op for minimal UI
 }
 
 void CanvasComponent::mouseDown(const juce::MouseEvent& e)
 {
-    // Start new paint stroke
+    lastMousePos = e.position;
+
+    // Test mode audio feedback
+    bool testMode = audioProcessor.apvts.getParameterAsValue(Params::ParameterIDs::testModeActive).getValue();
+    if (testMode)
+    {
+        audioProcessor.generateImmediateAudioFeedback();
+    }
+
+#ifdef PHASE4_EXPERIMENT
+    bool useTestFeeder = audioProcessor.apvts.getParameterAsValue(Params::ParameterIDs::useTestFeeder).getValue();
+    if (!useTestFeeder) {
+        createAndSendMaskColumnPhase4(e.position);
+    } else {
+#endif
+        // Phase 2-3 Validation: Generate MaskColumn with proper timestamping
+        createAndSendMaskColumn(e.position);
+#ifdef PHASE4_EXPERIMENT
+    }
+#endif
+
+    // Start paint stroke for visual feedback
     currentStroke = PaintStroke{};
     currentStroke.isActive = true;
     currentStroke.brushType = currentBrushType;
     currentStroke.brushSize = currentBrushSize;
     currentStroke.brushStrength = currentBrushStrength;
     currentStroke.startTime = juce::Time::getMillisecondCounter();
-    
+
     // Add first point
     PaintStroke::Point point;
     point.position = e.position;
     point.spectralPos = screenToSpectral(e.position);
-    point.pressure = e.mods.isLeftButtonDown() ? 1.0f : 0.5f;
-    point.timestamp = 0.0f; // First point is time 0
+    point.pressure = 1.0f;
+    point.timestamp = 0.0f;
     
     currentStroke.points.push_back(point);
     
     isDragging = true;
-    lastMousePos = e.position;
-    
     repaint();
 }
 
@@ -253,29 +129,35 @@ void CanvasComponent::mouseDrag(const juce::MouseEvent& e)
 {
     if (!isDragging || !currentStroke.isActive) return;
     
-    // Add point to current stroke
+    lastMousePos = e.position;
+    
+#ifdef PHASE4_EXPERIMENT
+    bool useTestFeeder = audioProcessor.apvts.getParameterAsValue(Params::ParameterIDs::useTestFeeder).getValue();
+    if (!useTestFeeder) {
+        createAndSendMaskColumnPhase4(e.position);
+    } else {
+#endif
+        // Phase 2-3 Validation: Generate MaskColumn for continuous painting
+        createAndSendMaskColumn(e.position);
+#ifdef PHASE4_EXPERIMENT
+    }
+#endif
+    
+    // Add point to stroke
     PaintStroke::Point point;
     point.position = e.position;
     point.spectralPos = screenToSpectral(e.position);
-    point.pressure = e.mods.isLeftButtonDown() ? 1.0f : 0.5f;
+    point.pressure = 1.0f;
     point.timestamp = (juce::Time::getMillisecondCounter() - currentStroke.startTime) / 1000.0f;
     
     currentStroke.points.push_back(point);
     
-    // METASYNTH-STYLE: Generate immediate spectral feedback
-    generateImmediateAudioFeedback(point);
-    
     // Limit stroke length for performance
-    if (currentStroke.points.size() > 200)
+    if (currentStroke.points.size() > 100)
     {
         currentStroke.points.erase(currentStroke.points.begin());
-        // Update timestamps
-        float baseTime = currentStroke.points[0].timestamp;
-        for (auto& p : currentStroke.points)
-            p.timestamp -= baseTime;
     }
     
-    lastMousePos = e.position;
     repaint();
 }
 
@@ -285,16 +167,12 @@ void CanvasComponent::mouseUp(const juce::MouseEvent& e)
     
     if (currentStroke.isActive)
     {
-        // Finalize stroke and send to processor
         currentStroke.isActive = false;
         
         if (currentStroke.points.size() > 1)
         {
-            sendGestureToProcessor(currentStroke);
-            
-            // Add to completed strokes for visual history
             completedStrokes.push_back(currentStroke);
-            if (completedStrokes.size() > 50) // Limit history
+            if (completedStrokes.size() > 20)
             {
                 completedStrokes.erase(completedStrokes.begin());
             }
@@ -308,19 +186,17 @@ void CanvasComponent::mouseUp(const juce::MouseEvent& e)
 void CanvasComponent::mouseMove(const juce::MouseEvent& e)
 {
     lastMousePos = e.position;
-    repaint(); // For brush cursor
+    repaint();
 }
 
 void CanvasComponent::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
 {
     juce::ignoreUnused(e);
     
-    // Adjust brush size with mouse wheel
     float delta = wheel.deltaY * 5.0f;
     currentBrushSize = juce::jlimit(1.0f, 128.0f, currentBrushSize + delta);
     
-    // Update parameter
-    if (auto* param = audioProcessor.getValueTreeState().getParameter("brush_size"))
+    if (auto* param = audioProcessor.apvts.getParameter(Params::ParameterIDs::brushSize))
     {
         param->setValueNotifyingHost(currentBrushSize / 128.0f);
     }
@@ -332,86 +208,101 @@ bool CanvasComponent::isInterestedInFileDrag(const juce::StringArray& files)
 {
     for (const auto& file : files)
     {
-        if (file.endsWithIgnoreCase(".wav") || 
-            file.endsWithIgnoreCase(".aiff") ||
-            file.endsWithIgnoreCase(".flac") ||
-            file.endsWithIgnoreCase(".mp3"))
-        {
+        if (file.endsWithIgnoreCase(".wav") || file.endsWithIgnoreCase(".aiff"))
             return true;
-        }
     }
     return false;
 }
 
-void CanvasComponent::fileDragEnter(const juce::StringArray& files, int x, int y)
+void CanvasComponent::fileDragEnter(const juce::StringArray&, int, int)
 {
-    juce::ignoreUnused(files, x, y);
     isFileDragOver = true;
     repaint();
 }
 
-void CanvasComponent::fileDragExit(const juce::StringArray& files)
+void CanvasComponent::fileDragExit(const juce::StringArray&)
 {
-    juce::ignoreUnused(files);
     isFileDragOver = false;
     repaint();
 }
 
-void CanvasComponent::filesDropped(const juce::StringArray& files, int x, int y)
+void CanvasComponent::filesDropped(const juce::StringArray& files, int, int)
 {
-    juce::ignoreUnused(x, y);
-    
     isFileDragOver = false;
-    
     if (files.size() > 0)
     {
-        juce::File audioFile(files[0]);
-        if (audioFile.existsAsFile())
-        {
-            // TODO: Send to AsyncSampleLoader
-            juce::Logger::writeToLog("Loading sample: " + audioFile.getFullPathName());
-            
-            // For now, just switch to Resynth mode when file is loaded
-            if (auto* param = audioProcessor.getValueTreeState().getParameter("mode"))
-            {
-                param->setValueNotifyingHost(1.0f / 2.0f); // Resynth mode
-            }
-        }
+        juce::Logger::writeToLog("Loading: " + files[0]);
     }
-    
     repaint();
 }
 
 void CanvasComponent::timerCallback()
 {
-    processSpectralData();
-    updatePerformanceMetrics();
+#ifdef PHASE4_EXPERIMENT
+    // Check if we need to dispatch accumulated MaskColumn
+    bool useTestFeeder = audioProcessor.apvts.getParameterAsValue(Params::ParameterIDs::useTestFeeder).getValue();
+    
+    if (!useTestFeeder && accumulator_.hasData) {
+        auto now = std::chrono::high_resolution_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastDispatchTime_).count();
+        
+        if (elapsed >= batchIntervalMs_) {
+            // Create and send accumulated MaskColumn
+            MaskColumn mask;
+            
+            // Get processor epoch and sample rate for unified timebase
+            auto epochNanos = audioProcessor.getEpochSteadyNanos();
+            double sampleRate = audioProcessor.getSampleRate();
+            
+            // Capture current UI timestamp (steady_clock)
+            auto uiSteadyNanos = std::chrono::steady_clock::now().time_since_epoch().count();
+            
+            // Convert UI time to samples since epoch
+            uint64_t uiTimestampSamples = static_cast<uint64_t>((uiSteadyNanos - epochNanos) * sampleRate / 1e9);
+            
+            // Fill mask column
+            mask.timestampSamples = static_cast<double>(uiTimestampSamples);
+            mask.uiTimestampMicros = uiSteadyNanos / 1000;
+            mask.sequenceNumber = audioProcessor.getNextMaskSequenceNumber();
+            mask.numBins = 257;
+            mask.frameIndex = 0;
+            
+            // Copy accumulated values
+            const size_t copySize = std::min(static_cast<size_t>(mask.numBins), accumulator_.values.size());
+            for (size_t i = 0; i < copySize; ++i) {
+                mask.values[i] = accumulator_.values[i];
+            }
+            
+            // Send to audio thread
+            audioProcessor.pushMaskColumn(mask);
+            
+            // Clear accumulator and update timing
+            accumulator_.clear();
+            lastDispatchTime_ = now;
+        }
+    }
+#endif
+    
     repaint();
 }
 
 // Public interface methods
-void CanvasComponent::setEngineMode(int mode) { /* TODO: Implement */ }
-void CanvasComponent::setBlendAmount(float blend) { /* TODO: Implement */ }
+void CanvasComponent::setEngineMode(int) { }
+void CanvasComponent::setBlendAmount(float) { }
 void CanvasComponent::setBrushType(int type) { currentBrushType = type; }
 void CanvasComponent::setBrushSize(float size) { currentBrushSize = size; }
 void CanvasComponent::setBrushStrength(float strength) { currentBrushStrength = strength; }
 void CanvasComponent::setGridVisible(bool visible) { gridVisible = visible; repaint(); }
 void CanvasComponent::setSnapToScale(bool snap) { snapToScale = snap; }
 
-// Private helper methods
-
+// Helper methods
 juce::Point<float> CanvasComponent::screenToSpectral(juce::Point<float> screenPos) const
 {
     const float canvasHeight = (float)getHeight();
     const float canvasWidth = (float)getWidth();
     
-    // Account for floating UI margins
-    const float topMargin = 80.0f;  // TopStrip + margin
-    const float bottomMargin = 70.0f; // BottomBar + margin
-    const float usableHeight = canvasHeight - topMargin - bottomMargin;
-    
-    float u = screenPos.x / canvasWidth;                           // Time: 0..1 (left to right)
-    float v = 1.0f - ((screenPos.y - topMargin) / usableHeight);   // Frequency: 0..1 (bottom to top)
+    float u = screenPos.x / canvasWidth;
+    float v = 1.0f - (screenPos.y / canvasHeight);
     
     return juce::Point<float>(juce::jlimit(0.0f, 1.0f, u), 
                               juce::jlimit(0.0f, 1.0f, v));
@@ -422,262 +313,133 @@ juce::Point<float> CanvasComponent::spectralToScreen(juce::Point<float> spectral
     const float canvasHeight = (float)getHeight();
     const float canvasWidth = (float)getWidth();
     
-    const float topMargin = 80.0f;
-    const float bottomMargin = 70.0f;
-    const float usableHeight = canvasHeight - topMargin - bottomMargin;
-    
     float x = spectralPos.x * canvasWidth;
-    float y = topMargin + (1.0f - spectralPos.y) * usableHeight;
+    float y = (1.0f - spectralPos.y) * canvasHeight;
     
     return juce::Point<float>(x, y);
 }
 
-void CanvasComponent::sendGestureToProcessor(const PaintStroke& stroke)
-{
-    // TODO: Convert stroke to MaskAtlas updates
-    // For now, just log the gesture
-    juce::Logger::writeToLog("Paint stroke: " + juce::String(stroke.points.size()) + 
-                             " points, type " + juce::String(stroke.brushType));
-}
-
-void CanvasComponent::processSpectralData()
-{
-    // Process any pending spectral frames from audio thread
-    auto& spectralQueue = audioProcessor.getSpectralDataQueue();
-    while (auto frame = spectralQueue.pop())
-    {
-        if (gpuRenderer)
-        {
-            gpuRenderer->updateSpectralTexture(*frame);
-        }
-    }
-}
-
-void CanvasComponent::updatePerformanceMetrics()
-{
-    // Calculate FPS (simple moving average)
-    static float frameTimeAccum = 0.0f;
-    static int frameCount = 0;
-    
-    frameTimeAccum += 16.67f; // Approximate
-    frameCount++;
-    
-    if (frameCount >= 60) // Update once per second
-    {
-        currentFPS = 1000.0f * frameCount / frameTimeAccum;
-        frameTimeAccum = 0.0f;
-        frameCount = 0;
-        
-        // Update bottom bar
-        bottomBar->updateMetrics(currentFPS, currentCPU, 17.0f); // TODO: Real latency
-    }
-}
-
-void CanvasComponent::drawGridOverlay(juce::Graphics& g)
-{
-    if (!gridVisible) return;
-    
-    const int width = getWidth();
-    const int height = getHeight();
-    const float topMargin = 80.0f;
-    const float bottomMargin = 70.0f;
-    const float usableHeight = height - topMargin - bottomMargin;
-    
-    g.setColour(juce::Colours::white.withAlpha(0.15f));
-    
-    // Frequency grid lines (horizontal) - musical pitches
-    const int numOctaves = 8;
-    const int notesPerOctave = 12;
-    
-    for (int octave = 1; octave <= numOctaves; ++octave)
-    {
-        for (int note = 0; note < notesPerOctave; ++note)
-        {
-            float frequency = 55.0f * std::pow(2.0f, octave + note / 12.0f); // A1 = 55Hz base
-            if (frequency > 20000.0f) break;
-            
-            // Convert frequency to Y position (log scale)
-            float normalizedFreq = std::log2(frequency / 20.0f) / std::log2(20000.0f / 20.0f);
-            float y = topMargin + (1.0f - normalizedFreq) * usableHeight;
-            
-            if (y >= topMargin && y <= height - bottomMargin)
-            {
-                float alpha = (note == 0) ? 0.3f : 0.15f; // Octaves brighter
-                g.setColour(juce::Colours::white.withAlpha(alpha));
-                g.drawHorizontalLine((int)y, 0.0f, (float)width);
-            }
-        }
-    }
-    
-    // Time grid lines (vertical) - beat markers
-    const int numBeats = 16;
-    for (int beat = 1; beat < numBeats; ++beat)
-    {
-        float x = (float)beat / numBeats * width;
-        float alpha = (beat % 4 == 0) ? 0.25f : 0.1f; // Downbeats brighter
-        g.setColour(juce::Colours::white.withAlpha(alpha));
-        g.drawVerticalLine((int)x, topMargin, height - bottomMargin);
-    }
-}
-
-void CanvasComponent::drawBrushCursor(juce::Graphics& g)
-{
-    const float x = lastMousePos.x;
-    const float y = lastMousePos.y;
-    const float radius = currentBrushSize * 0.5f;
-    
-    // Outer circle
-    g.setColour(juce::Colours::white.withAlpha(0.6f));
-    g.drawEllipse(x - radius, y - radius, radius * 2, radius * 2, 1.0f);
-    
-    // Inner crosshair
-    g.setColour(juce::Colours::white.withAlpha(0.8f));
-    const float crossSize = 8.0f;
-    g.drawLine(x - crossSize, y, x + crossSize, y, 1.0f);
-    g.drawLine(x, y - crossSize, x, y + crossSize, 1.0f);
-    
-    // Strength indicator (filled portion)
-    float strengthRadius = radius * currentBrushStrength;
-    g.setColour(getNebulaAccentColor().withAlpha(0.3f));
-    g.fillEllipse(x - strengthRadius, y - strengthRadius, 
-                  strengthRadius * 2, strengthRadius * 2);
-}
-
-juce::Colour CanvasComponent::getNebulaAccentColor() const 
-{ 
-    return juce::Colour(0xff00bcd4); // Cyan from mockups
-}
-
-void CanvasComponent::generateImmediateAudioFeedback(const PaintStroke::Point& point)
-{
-    // MetaSynth-style: Convert paint stroke directly to spectral mask
-    // spectralPos.y = frequency (0-1), spectralPos.x = time position
-    
-    MaskColumn maskColumn;
-    maskColumn.numBins = 257; // For 512-point FFT (NUM_BINS = 257)
-    maskColumn.timestampSamples = audioProcessor.getSampleRate() * point.timestamp;
-    maskColumn.frameIndex = static_cast<uint32_t>(point.timestamp * 60.0); // ~60fps equivalent
-    
-    // Clear mask to default (no effect)
-    for (size_t i = 0; i < maskColumn.numBins; ++i)
-    {
-        maskColumn.values[i] = 1.0f; // No masking by default
-    }
-    
-    // Convert screen position to frequency bin
-    const float frequencyRatio = juce::jlimit(0.0f, 1.0f, point.spectralPos.y);
-    const int centerBin = static_cast<int>(frequencyRatio * (maskColumn.numBins - 1));
-    
-    // Calculate brush influence based on size and strength
-    const int brushRadius = static_cast<int>(currentBrushSize * 0.5f);
-    
-    for (int bin = juce::jmax(0, centerBin - brushRadius); 
-         bin <= juce::jmin(static_cast<int>(maskColumn.numBins - 1), centerBin + brushRadius); 
-         ++bin)
-    {
-        const float distance = std::abs(bin - centerBin);
-        const float falloff = juce::jmax(0.0f, 1.0f - (distance / brushRadius));
-        
-        switch (currentBrushType)
-        {
-            case 0: // Paint - Add spectral energy
-                maskColumn.values[bin] = juce::jlimit(0.0f, 3.0f, 
-                    maskColumn.values[bin] + (currentBrushStrength * falloff * point.pressure));
-                break;
-                
-            case 1: // Quantize - Snap to scale (simplified)
-                maskColumn.values[bin] = (falloff > 0.5f) ? 2.0f : 1.0f;
-                break;
-                
-            case 2: // Erase - Remove spectral energy
-                maskColumn.values[bin] = juce::jmax(0.0f, 
-                    maskColumn.values[bin] - (currentBrushStrength * falloff * point.pressure));
-                break;
-                
-            case 3: // Comb - Create harmonic series
-                if (bin % 3 == 0) // Simple harmonic pattern
-                {
-                    maskColumn.values[bin] = 2.0f * currentBrushStrength;
-                }
-                break;
-        }
-    }
-    
-    // Send mask to audio thread immediately (RT-safe)
-    if (auto& maskQueue = audioProcessor.getMaskColumnQueue(); maskQueue.hasSpaceAvailable())
-    {
-        maskQueue.push(maskColumn);
-    }
-}
-
 void CanvasComponent::parentHierarchyChanged()
 {
-    // Update UI component references when parent changes
-    if (topStrip)
-        topStrip->updateParentReferences();
-    if (bottomBar)
-        bottomBar->updateParentReferences();
+    // Phase 2-3 MINIMAL: No floating UI components to update
 }
 
 void CanvasComponent::visibilityChanged()
 {
-    juce::Logger::writeToLog("CanvasComponent::visibilityChanged() called");
+    // Phase 2-3 MINIMAL: No GPU renderer initialization needed
+}
+
+void CanvasComponent::createAndSendMaskColumn(juce::Point<float> mousePos)
+{
+    // Phase 2-3 Validation: Convert mouse position to MaskColumn for latency testing
+    MaskColumn mask;
     
-#ifdef _WIN32
+    // Get processor epoch and sample rate for unified timebase
+    auto epochNanos = audioProcessor.getEpochSteadyNanos();
+    double sampleRate = audioProcessor.getSampleRate();
     
-    if (isShowing() && !gpuRenderer)
+    // Capture current UI timestamp (steady_clock)
+    auto uiSteadyNanos = std::chrono::steady_clock::now().time_since_epoch().count();
+    
+    // Convert UI time to samples since epoch (per spec)
+    uint64_t uiTimestampSamples = static_cast<uint64_t>((uiSteadyNanos - epochNanos) * sampleRate / 1e9);
+    
+    // Fill mask column with validation data
+    mask.timestampSamples = static_cast<double>(uiTimestampSamples);  // Store as double for compatibility
+    mask.uiTimestampMicros = uiSteadyNanos / 1000;                    // Keep microseconds for backward compat
+    mask.sequenceNumber = audioProcessor.getNextMaskSequenceNumber();
+    mask.numBins = 257; // Standard FFT size for validation
+    mask.frameIndex = 0;
+    
+    // Convert mouse position to spectral position
+    auto spectralPos = screenToSpectral(mousePos);
+    
+    // Create simple test mask based on mouse position
+    // Map X coordinate to frequency bins (0..numBins)
+    // Y coordinate controls amplitude (0..1)
+    size_t centerBin = static_cast<size_t>(spectralPos.x * (mask.numBins - 1));
+    float amplitude = spectralPos.y * currentBrushStrength;
+    
+    // Apply brush-sized mask around center bin
+    size_t brushWidthBins = static_cast<size_t>(currentBrushSize * mask.numBins / 512.0f);
+    for (size_t i = 0; i < mask.numBins; ++i)
     {
-        // Create GPU renderer when component becomes visible
-        juce::Logger::writeToLog("Attempting to create GPU renderer...");
-        try 
+        if (i >= centerBin - brushWidthBins && i <= centerBin + brushWidthBins)
         {
-            gpuRenderer = std::make_unique<D3D11Renderer>();
-            juce::Logger::writeToLog("GPU renderer created successfully");
-        }
-        catch (const std::exception& e)
-        {
-            // GPU creation failed, will use software fallback
-            gpuRenderer.reset();
-            juce::Logger::writeToLog("GPU renderer creation failed with exception: " + juce::String(e.what()));
-            return;
-        }
-        catch (...)
-        {
-            // GPU creation failed, will use software fallback
-            gpuRenderer.reset();
-            juce::Logger::writeToLog("GPU renderer creation failed with unknown exception, using software fallback");
-            return;
-        }
-    }
-    
-    if (isShowing() && gpuRenderer && !gpuRenderer->isInitialized())
-    {
-        if (auto* peer = getPeer())
-        {
-            if (auto* handle = peer->getNativeHandle())
-            {
-                bool success = gpuRenderer->initialize(handle, getWidth(), getHeight());
-                if (!success)
-                {
-                    // GPU initialization failed, reset and use software fallback
-                    juce::Logger::writeToLog("GPU initialization failed: " + gpuRenderer->getLastError());
-                    gpuRenderer.reset();
-                }
-                else
-                {
-                    juce::Logger::writeToLog("GPU initialized successfully");
-                }
-            }
-            else
-            {
-                juce::Logger::writeToLog("No native handle available for GPU initialization");
-            }
+            mask.values[i] = amplitude;
         }
         else
         {
-            juce::Logger::writeToLog("No peer available for GPU initialization");
+            mask.values[i] = 0.0f;
         }
     }
-#endif
+    
+    // Send to audio thread via RT-safe queue
+    if (!audioProcessor.getMaskColumnQueue().push(mask))
+    {
+        // Queue full - increment drop counter for debug overlay
+        queueDropCounter.fetch_add(1, std::memory_order_relaxed);
+    }
 }
 
+#ifdef PHASE4_EXPERIMENT
+// Isolated Y-to-bin mapping functions
+inline int CanvasComponent::uiToBinLinear(float yNorm, int numBins) noexcept
+{
+    // Top = highest frequency (1.0f - yNorm for inverted Y)
+    return std::clamp(static_cast<int>((1.0f - yNorm) * (numBins - 1)), 0, numBins - 1);
+}
+
+inline int CanvasComponent::uiToBinLog(float yNorm, double sampleRate, int fftSize) noexcept
+{
+    // Future: Log-frequency mapping for musical scales
+    // For now, fallback to linear
+    const int numBins = fftSize / 2 + 1;
+    return uiToBinLinear(yNorm, numBins);
+}
+
+void CanvasComponent::createAndSendMaskColumnPhase4(juce::Point<float> mousePos)
+{
+    // Convert mouse position to spectral coordinates
+    const auto spectralPos = screenToSpectral(mousePos);
+    const float yNorm = spectralPos.y;  // Already normalized by screenToSpectral
+    
+    // Get current audio parameters
+    const int numBins = 257;  // Fixed for 512 FFT
+    const double sampleRate = audioProcessor.getSampleRate();
+    const int fftSize = 512;  // From current system
+    
+    // Map Y to bin index (linear mapping)
+    const int centerBin = uiToBinLinear(yNorm, numBins);
+    
+    // Calculate brush extent in bins
+    const float brushSizeBins = currentBrushSize * numBins / 512.0f;
+    const float pressureScaled = currentBrushStrength;
+    
+    // 3-tap antialiasing kernel
+    constexpr float kernel[3] = {0.25f, 0.5f, 0.25f};
+    
+    // Accumulate into column accumulator with antialiasing
+    for (int offset = -1; offset <= 1; ++offset) {
+        const int binIndex = centerBin + offset;
+        if (binIndex >= 1 && binIndex < numBins - 1) {  // Skip DC and Nyquist
+            const float weight = kernel[offset + 1];
+            const float value = pressureScaled * weight;
+            accumulator_.accumulate(binIndex, value);
+        }
+    }
+    
+    // Apply brush size by distributing to nearby bins
+    const int brushRadius = static_cast<int>(std::ceil(brushSizeBins * 0.5f));
+    for (int offset = -brushRadius; offset <= brushRadius; ++offset) {
+        const int binIndex = centerBin + offset;
+        if (binIndex >= 1 && binIndex < numBins - 1) {
+            // Gaussian-like falloff
+            const float distance = std::abs(static_cast<float>(offset));
+            const float falloff = std::max(0.0f, 1.0f - distance / (brushRadius + 1.0f));
+            const float value = pressureScaled * falloff * 0.3f;  // Reduce intensity for spread
+            accumulator_.accumulate(binIndex, value);
+        }
+    }
+}
+#endif

@@ -34,10 +34,19 @@ target_sources(SpectralCanvasPro PRIVATE
     Source/Core/MessageBus.h
     Source/Core/RealtimeSafeTypes.h
     Source/Core/PaintQueue.h
+    Source/Core/LatencyTracker.h
     
     # DSP processing
     Source/DSP/SpectralEngine.h
     Source/DSP/SpectralEngine.cpp
+    Source/DSP/SampleLoader.h
+    Source/DSP/SampleLoader.cpp
+    Source/DSP/MaskTestFeeder.h
+    Source/DSP/MaskTestFeeder.cpp
+    Source/DSP/KeyFilter.h
+    Source/DSP/KeyFilter.cpp
+    Source/DSP/SpectralEngineStub.h
+    Source/DSP/SpectralEngineStub.cpp
     
     # GUI components
     Source/GUI/CanvasComponent.h
@@ -46,6 +55,10 @@ target_sources(SpectralCanvasPro PRIVATE
     Source/GUI/TopStrip.cpp
     Source/GUI/BottomBar.h
     Source/GUI/BottomBar.cpp
+    Source/GUI/MinimalTopStrip.h
+    Source/GUI/MinimalTopStrip.cpp
+    Source/GUI/MinimalBottomStrip.h
+    Source/GUI/MinimalBottomStrip.cpp
     
     # GPU rendering
     Source/Viz/GpuRenderer.h
