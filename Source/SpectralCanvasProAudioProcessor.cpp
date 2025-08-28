@@ -103,7 +103,36 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     
     // Clear ALL output channels at the start
     buffer.clear();
-    
+
+#ifdef PHASE4_EXPERIMENT
+    // Phase 4 experimental path: oscillator bank with key filter
+    if (!useTestFeeder_.load(std::memory_order_relaxed)) {
+        // Process parameter updates from UI thread (RT-safe)
+        while (auto paramUpdate = parameterQueue.pop())
+        {
+            // Apply parameter changes with sample-accurate timing
+            // TODO: Implement parameter smoothing and application
+        }
+        
+        // Pop all mask columns into spectral stub
+        spectralStub.popAllMaskColumnsInto(maskColumnQueue);
+        
+        // Apply key filter if enabled
+        if (keyFilterEnabled_.load(std::memory_order_relaxed)) {
+            keyFilter.apply(spectralStub.getMagnitudesWritePtr(), 257);
+        }
+        
+        // Render oscillator bank
+        const float gain = oscGain_.load(std::memory_order_relaxed);
+        spectralStub.process(buffer, gain);
+        
+        // Update sample counter and return early
+        processedSampleCount_.fetch_add(numSamples, std::memory_order_relaxed);
+        return;
+    }
+#endif
+
+    // Test feeder path - fallback for Phase 4 or primary for Phase 2-3
     // Process parameter updates from UI thread (RT-safe)
     while (auto paramUpdate = parameterQueue.pop())
     {
@@ -139,27 +168,6 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
             spectralEngine->updateCurrentMask(&currentMaskColumn);
         }
     }
-    
-#ifdef PHASE4_EXPERIMENT
-    // Phase 4 experimental path: oscillator bank with key filter
-    if (!useTestFeeder_.load(std::memory_order_relaxed)) {
-        // Pop all mask columns into spectral stub
-        spectralStub.popAllMaskColumnsInto(maskColumnQueue);
-        
-        // Apply key filter if enabled
-        if (keyFilterEnabled_.load(std::memory_order_relaxed)) {
-            keyFilter.apply(spectralStub.getMagnitudesWritePtr(), 257);
-        }
-        
-        // Render oscillator bank
-        const float gain = oscGain_.load(std::memory_order_relaxed);
-        spectralStub.process(buffer, gain);
-        
-        // Update sample counter and return early
-        processedSampleCount_.fetch_add(numSamples, std::memory_order_relaxed);
-        return;
-    }
-#endif
     
     // Process test mask columns for paint-to-audio validation (RT-safe)
     MaskColumn testMask;

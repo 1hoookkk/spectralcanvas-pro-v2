@@ -152,7 +152,11 @@
       "Bash(\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command \"Get-ChildItem -Path ''build'' -Recurse -Include ''*.exe'', ''*.vst3'' | Where-Object { $_astWriteTime -gt (Get-Date).AddMinutes(-2) } | Select-Object FullName, LastWriteTime\")",
       "Bash(\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command \"Get-ChildItem -Path ''build'' -Recurse -Include ''*.exe'', ''*.vst3'' | Where-Object { $_LastWriteTime -gt (Get-Date).AddMinutes(-2) } | Select-Object FullName, LastWriteTime\")",
       "Bash(\"C:\\spectralCanvas Pro\\build\\SpectralCanvasPro_artefacts\\RelWithDebInfo\\Standalone\\spectralCanvas Pro.exe\")",
-      "Bash(\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command \"Get-ChildItem -Path ''C:\\spectralCanvas Pro\\build'' -Recurse -Include ''*.exe'', ''*.vst3'' | Where-Object { $_LastWriteTime -gt (Get-Date).AddMinutes(-2) } | Select-Object FullName, LastWriteTime\")"
+      "Bash(\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command \"Get-ChildItem -Path ''C:\\spectralCanvas Pro\\build'' -Recurse -Include ''*.exe'', ''*.vst3'' | Where-Object { $_LastWriteTime -gt (Get-Date).AddMinutes(-2) } | Select-Object FullName, LastWriteTime\")",
+      "Bash(\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command \"Get-ChildItem -Path ''build'' -Recurse -Name ''*.sln''\")",
+      "Bash(\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command \"Get-ChildItem -Path ''build'' -Recurse -Include ''*.exe'', ''*.vst3'' | Where-Object { $_LastWriteTime -gt (Get-Date).AddMinutes(-2) } | Select-Object FullName, LastWriteTime\")",
+      "Bash(\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command \"Get-ChildItem -Path ''build\\SpectralCanvasPro_artefacts'' -Recurse | Where-Object { $_LastWriteTime -gt (Get-Date).AddMinutes(-5) } | Select-Object FullName, LastWriteTime\")",
+      "Bash(\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command \"if (Test-Path ''build\\SpectralCanvasPro_artefacts\\RelWithDebInfo\\Standalone\\spectralCanvas Pro.exe'') { Write-Host ''FOUND: Standalone EXE exists''; Get-Item ''build\\SpectralCanvasPro_artefacts\\RelWithDebInfo\\Standalone\\spectralCanvas Pro.exe'' | Select-Object Name, LastWriteTime, Length } else { Write-Host ''NOT FOUND: Need to build first'' }\")"
     ],
     "deny": [],
     "ask": [],

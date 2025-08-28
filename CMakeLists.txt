@@ -81,6 +81,7 @@ target_compile_definitions(SpectralCanvasPro
       JUCE_DISPLAY_SPLASH_SCREEN=0
       JUCE_VST3_CAN_REPLACE_VST2=0
       JUCE_STRICT_REFCOUNTEDPOINTER=1
+      PHASE4_EXPERIMENT=1
 )
 
 # Windows-specific defines
