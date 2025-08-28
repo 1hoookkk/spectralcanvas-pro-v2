@@ -71,12 +71,9 @@ void SpectralEngineStub::process(juce::AudioBuffer<float>& outBuffer, float oscG
     activeBinCount_ = countActiveBins();
     currentStride_ = calculateStride(activeBinCount_);
     
-    // Clear output buffer
-    outBuffer.clear();
-    
     // Skip DC (k=0) and Nyquist (k=numBins-1) bins to prevent rumble/aliasing
-    const int startBin = std::max(1, currentStride_);
-    const int endBin = std::max(1, numBins_ - 1);
+    const int startBin = 1;
+    const int endBin = numBins_ - 1;
     
     // Synthesize active bins with adaptive stride
     for (int k = startBin; k < endBin; k += currentStride_) {
@@ -88,6 +85,17 @@ void SpectralEngineStub::process(juce::AudioBuffer<float>& outBuffer, float oscG
         // Render this bin's contribution
         renderBinAdd(outBuffer, k, amplitude);
     }
+    
+    // Debug: Add a quiet test tone at 440Hz if no paint data exists
+    #if JUCE_DEBUG
+    if (activeBinCount_ == 0) {
+        // Calculate 440Hz bin (approximately)
+        const int testBin = static_cast<int>((440.0 * fftSize_) / sampleRate_);
+        if (testBin > 0 && testBin < numBins_ - 1) {
+            renderBinAdd(outBuffer, testBin, 0.01f * oscGain);  // Very quiet test tone
+        }
+    }
+    #endif
 }
 
 int SpectralEngineStub::calculateStride(int activeBinCount) const noexcept {

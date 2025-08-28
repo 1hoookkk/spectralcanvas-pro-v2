@@ -3,10 +3,16 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "SpectralCanvasProAudioProcessor.h"
 #include "GUI/CanvasComponent.h"
+#include "GUI/MinimalTopStrip.h"
 
 /**
- * Main editor component that hosts the full-bleed nebula canvas interface
- * Transformed from basic placeholder to match the UI mockups
+ * Phase 2-3 Minimal UI Editor
+ * 
+ * STRIPPED DOWN VERSION:
+ * - MinimalTopStrip for essential controls only
+ * - Full-bleed CanvasComponent for painting
+ * - NO fancy panels until Phase 4
+ * - RT-safe with <5ms paint-to-audio latency
  */
 class SpectralCanvasProEditor : public juce::AudioProcessorEditor
 {
@@ -16,31 +22,13 @@ public:
 
     void paint(juce::Graphics&) override;
     void resized() override;
-    
-    // Layout helpers
-    void layoutControlPanels();
-    juce::Rectangle<int> getCanvasArea() const;
-    juce::Rectangle<int> getControlStripArea() const;
 
 private:
     SpectralCanvasProAudioProcessor& audioProcessor;
     
-    // Main canvas component (full-bleed nebula interface) 
+    // Phase 2-3 Minimal UI Components
     std::unique_ptr<CanvasComponent> canvasComponent;
-    
-    // Control panels
-    class SourceEnginePanel;
-    class BrushControlsPanel;
-    class PostFXPanel;
-    
-    std::unique_ptr<SourceEnginePanel> sourceEnginePanel;
-    std::unique_ptr<BrushControlsPanel> brushControlsPanel;
-    std::unique_ptr<PostFXPanel> postFXPanel;
-    
-    // Parameter attachments for real-time control
-    std::unique_ptr<juce::SliderParameterAttachment> modeSliderAttachment;
-    std::unique_ptr<juce::SliderParameterAttachment> brushSizeAttachment;
-    std::unique_ptr<juce::SliderParameterAttachment> brushStrengthAttachment;
+    std::unique_ptr<MinimalTopStrip> topStrip;
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectralCanvasProEditor)
 };

@@ -1,5 +1,56 @@
 # SpectralCanvas Pro v2 - Development Rules & Standards
 
+---
+
+## 📌 Project Overview
+
+Real-time spectral audio plugin with GPU-accelerated visualization. Core principle: **RT-safety, correctness, and reproducibility** over speed.
+
+---
+
+## ✅ File Boundaries
+
+* **Safe to edit**: `Source/*`, `CMakeLists.txt`, config files
+* **Never edit**: `.git/`, `build/`, `*.pdb`, temp files, `.vs/`
+* **Ask before touching**: JUCE framework files, external dependencies
+
+---
+
+## 🛠 Commands
+
+* `cmake --build build --config RelWithDebInfo --target SpectralCanvas` → Build plugin
+* `cmake --build build --config RelWithDebInfo --target SpectralCanvas_Standalone` → Build standalone
+* Manual testing in REAPER/Cubase required (no automated test suite yet)
+* Build artifacts: `build/SpectralCanvas_artefacts/RelWithDebInfo/`
+
+---
+
+## ⚙️ Task Delegation
+
+* **Always delegate to sub-agents**: File reads, searches, codebase analysis, log parsing
+* **Group related searches** before delegation to reduce token usage  
+* **Never delegate writes** — main agent handles all code modifications
+* Use Task tool for complex multi-file analysis and planning
+
+---
+
+## 🛡 Execution Modes
+
+* **Plan Mode (default)**: For research, analysis, planning. Use TodoWrite for task tracking
+* **Direct execution**: Only for well-understood, isolated changes
+* **Never skip validation**: All changes must compile and preserve RT-safety
+
+---
+
+## 🧠 Memory & Versioning
+
+* Always commit working state before major changes
+* Use descriptive branch names for experimental features
+* Backup critical files before risky modifications
+* Document breaking changes in commit messages
+
+---
+
 ## C++20 Standards
 - Use RAII for all resource management
 - Apply `noexcept` to functions that guarantee no exceptions
@@ -141,3 +192,34 @@ void handleDeviceLost();
 - [ ] Message queues handle overflow gracefully
 - [ ] All allocations happen at initialization
 - [ ] Performance targets validated with profiler
+
+---
+
+## 🚦 Validation Rules
+
+* All changes must compile successfully with MSVC 2022
+* Claude must explain why each diff is RT-safe, especially for audio thread code
+* If RT-safety could be compromised, STOP and ask for clarification instead of guessing
+* Test in primary DAW (REAPER) before considering changes complete
+* Performance regression = immediate rollback
+
+---
+
+## 🧩 Development Philosophy  
+
+* **Small, focused commits** over large refactors
+* **Delete dead code** instead of commenting it out
+* **Prefer pure functions**; isolate side effects to specific layers
+* **Audio thread is sacred** — treat violations as critical bugs
+* **GPU thread independence** — never block on GPU operations from audio/UI
+
+---
+
+## 📝 Important Instructions
+
+* Do what has been asked; nothing more, nothing less
+* NEVER create files unless absolutely necessary for the goal
+* ALWAYS prefer editing existing files to creating new ones  
+* NEVER proactively create documentation files unless explicitly requested
+* Prioritize RT-safety and correctness over development speed
+- @CLAUDE.md

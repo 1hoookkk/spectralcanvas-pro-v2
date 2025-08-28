@@ -101,9 +101,8 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     const int totalNumOutputChannels = getTotalNumOutputChannels();
     const int numSamples = buffer.getNumSamples();
     
-    // Clear any output channels that don't contain input data
-    for (int channel = totalNumInputChannels; channel < totalNumOutputChannels; ++channel)
-        buffer.clear(channel, 0, numSamples);
+    // Clear ALL output channels at the start
+    buffer.clear();
     
     // Process parameter updates from UI thread (RT-safe)
     while (auto paramUpdate = parameterQueue.pop())
@@ -141,16 +140,6 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
         }
     }
     
-    // Process test mask columns for paint-to-audio validation (RT-safe)
-    MaskColumn testMask;
-    while (maskTestFeeder.tryPopMask(testMask))
-    {
-        if (spectralEngine && spectralEngine->isInitialized())
-        {
-            spectralEngine->applyMaskColumn(testMask);
-        }
-    }
-    
 #ifdef PHASE4_EXPERIMENT
     // Phase 4 experimental path: oscillator bank with key filter
     if (!useTestFeeder_.load(std::memory_order_relaxed)) {
@@ -171,6 +160,16 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
         return;
     }
 #endif
+    
+    // Process test mask columns for paint-to-audio validation (RT-safe)
+    MaskColumn testMask;
+    while (maskTestFeeder.tryPopMask(testMask))
+    {
+        if (spectralEngine && spectralEngine->isInitialized())
+        {
+            spectralEngine->applyMaskColumn(testMask);
+        }
+    }
     
     // RT-safe spectral processing (process mono for now)
     if (spectralEngine && spectralEngine->isInitialized())
@@ -204,6 +203,21 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     
     // Update sample counter for latency calculation
     processedSampleCount_.fetch_add(numSamples, std::memory_order_relaxed);
+    
+#if JUCE_DEBUG
+    // Health check: detect silent audio in debug builds
+    float rmsLevel = buffer.getRMSLevel(0, 0, numSamples);
+    if (rmsLevel < 1e-6f && !useTestFeeder_.load(std::memory_order_relaxed)) {
+        // Add a single-sample impulse for debugging (very quiet)
+        if (numSamples > 0) {
+            buffer.setSample(0, 0, 0.001f);  // Tiny click to verify audio path
+        }
+        static int silenceCounter = 0;
+        if (++silenceCounter % 480 == 0) {  // Log every 10ms at 48kHz
+            juce::Logger::writeToLog("Phase 4: Audio path silent (health check triggered)");
+        }
+    }
+#endif
 }
 
 #ifdef PHASE4_EXPERIMENT

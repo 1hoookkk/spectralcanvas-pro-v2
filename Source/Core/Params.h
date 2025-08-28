@@ -156,7 +156,7 @@ namespace ParameterRanges
     const float gainDefault = 0.0f;
     
     // Phase 4 Experiment Parameters
-    const float useTestFeederDefault = 0.0f;             // Use new system by default (false)
+    const float useTestFeederDefault = 1.0f;             // Use test feeder by default (true) for immediate audio
     const float keyFilterEnabledDefault = 1.0f;          // Key filter enabled (true)
     const juce::NormalisableRange<float> scaleTypeRange(0.0f, 2.0f, 1.0f);
     const float scaleTypeDefault = 1.0f;                 // Major scale

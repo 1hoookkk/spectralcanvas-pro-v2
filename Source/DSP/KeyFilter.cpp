@@ -48,10 +48,11 @@ void KeyFilter::apply(float* magnitudes, int numBins) const noexcept {
     if (!lut || !lut->mask) return;
     
     const int safeNumBins = std::min(numBins, lut->numBins);
+    if (safeNumBins <= 2) return;  // Need at least 3 bins for meaningful filtering
     
     // Gate DC and Nyquist to prevent rumble/aliasing
-    if (safeNumBins > 0) magnitudes[0] = 0.0f;  // DC
-    if (safeNumBins > 1) magnitudes[safeNumBins - 1] = 0.0f;  // Nyquist
+    magnitudes[0] = 0.0f;  // DC
+    magnitudes[safeNumBins - 1] = 0.0f;  // Nyquist
     
     // Apply mask to frequency bins (skip DC and Nyquist)
     for (int k = 1; k < safeNumBins - 1; ++k) {
@@ -77,17 +78,18 @@ void KeyFilter::buildInto(KeyFilterLUT& dst, int rootPcParam, ScaleType scale) c
         // Calculate frequency for this bin
         const double freq = (dst.sampleRate / dst.fftSize) * k;
         
-        // Skip invalid frequencies
-        if (freq <= 0.0 || !std::isfinite(freq)) {
-            dst.mask[k] = 0;
+        // Skip invalid frequencies or very low frequencies
+        if (freq <= 20.0 || !std::isfinite(freq)) {
+            dst.mask[k] = (scale == ScaleType::Chromatic) ? 1 : 0;
             continue;
         }
         
         // Convert to MIDI note number
         const double midi = std::round(69.0 + 12.0 * std::log2(freq / 440.0));
         
-        // Extract pitch class (0-11)
-        const int pc = static_cast<int>(std::fmod(std::fmod(midi, 12.0) + 12.0, 12.0));
+        // Extract pitch class (0-11) - ensure positive result
+        int pc = static_cast<int>(midi) % 12;
+        if (pc < 0) pc += 12;
         
         // Apply scale mask
         dst.mask[k] = scaleMask[pc];

@@ -47,6 +47,9 @@ void SpectralEngine::initialize(double sampleRate, int maxBlockSize)
     currentTimeInSamples_.store(0.0, std::memory_order_relaxed);
     sequenceGenerator_.reset();
     
+    // Reset carrier phase
+    carrierPhase_ = 0.0f;
+    
     initialized_.store(true, std::memory_order_release);
     
     RT_SAFE_LOG("SpectralEngine initialization complete");
@@ -315,5 +318,59 @@ void SpectralEngine::updateCurrentMask(const float* maskPtr, int numBins) noexce
         // Update mask pointer (RT-safe atomic pointer swap)
         // Note: Caller must ensure maskPtr lifetime exceeds usage
         currentMask_.store(maskPtr, std::memory_order_release);
+    }
+}
+
+void SpectralEngine::applyMaskColumn(const MaskColumn& maskColumn) noexcept
+{
+    // Validate bin count alignment
+    const size_t maskBins = std::min(static_cast<size_t>(maskColumn.numBins), NUM_BINS);
+    
+    // Apply mask directly to current magnitude spectrum
+    auto& magnitude = currentMagnitude_.get();
+    
+    // Check for silence - if magnitude is too low, inject carrier
+    bool needsCarrier = true;
+    if (carrierEnabled_.load(std::memory_order_relaxed))
+    {
+        float totalEnergy = 0.0f;
+        for (size_t bin = 0; bin < NUM_BINS; ++bin)
+        {
+            totalEnergy += magnitude[bin] * magnitude[bin];
+        }
+        
+        // If we have sufficient energy, no need for carrier
+        if (totalEnergy > 1e-8f) // -80dB threshold
+        {
+            needsCarrier = false;
+        }
+    }
+    
+    // Inject carrier sine wave if needed (RT-safe static phase accumulator)
+    if (needsCarrier)
+    {
+        const float sampleRate = static_cast<float>(sampleRate_.load(std::memory_order_relaxed));
+        const float carrierBin = (CARRIER_FREQ / sampleRate) * FFT_SIZE;
+        const size_t bin = static_cast<size_t>(carrierBin);
+        
+        if (bin < NUM_BINS)
+        {
+            magnitude[bin] += CARRIER_AMP;
+        }
+        
+        // Update phase (will wrap naturally)
+        carrierPhase_ += 2.0f * M_PI * CARRIER_FREQ / sampleRate;
+    }
+    
+    // Apply mask values to magnitude spectrum
+    for (size_t bin = 0; bin < maskBins; ++bin)
+    {
+        const float maskValue = maskColumn.values[bin];
+        
+        // Clamp mask to reasonable range (0.1x to 10x)
+        const float clampedMask = std::clamp(maskValue, 0.1f, 10.0f);
+        
+        // Apply mask scaling to magnitude
+        magnitude[bin] *= clampedMask;
     }
 }
