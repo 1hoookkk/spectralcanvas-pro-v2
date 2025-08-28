@@ -6,7 +6,7 @@
 CanvasComponent::CanvasComponent(SpectralCanvasProAudioProcessor& processor)
     : audioProcessor(processor)
 {
-    // Don't initialize GPU renderer in constructor - defer until parentHierarchyChanged
+    // Don't initialize GPU renderer in constructor - defer until window is ready
     
     // Create floating UI components
     topStrip = std::make_unique<TopStrip>(audioProcessor, *this);
@@ -31,7 +31,17 @@ CanvasComponent::~CanvasComponent()
 
 void CanvasComponent::paint(juce::Graphics& g)
 {
-    // Try GPU renderer first, fall back to software if not available
+    
+    // GPU renderer handles the main spectral visualization
+    if (gpuRenderer && gpuRenderer->isInitialized())
+    {
+        if (!gpuRenderer->checkDeviceStatus())
+        {
+            // Device lost or invalid; shut down gracefully
+            gpuRenderer->shutdown();
+        }
+    }
+
     if (gpuRenderer && gpuRenderer->isInitialized())
     {
         gpuRenderer->beginFrame();
@@ -68,7 +78,7 @@ void CanvasComponent::paint(juce::Graphics& g)
         g.setColour(getNebulaAccentColor());
         g.drawRoundedRectangle(getLocalBounds().toFloat(), 8.0f, 2.0f);
         
-        g.setFont(24.0f);
+        g.setFont(juce::FontOptions(24.0f));
         g.drawText("Drop audio file to resynthesize", getLocalBounds(), juce::Justification::centred);
     }
 }
@@ -199,22 +209,6 @@ void CanvasComponent::resized()
     // BottomBar floats at bottom with margin  
     bottomBar->setBounds(margin, height - bottomBarHeight - margin, 
                         width - 2 * margin, bottomBarHeight);
-}
-
-void CanvasComponent::parentHierarchyChanged()
-{
-    // Initialize GPU renderer once we're attached to a window
-    if (!gpuRenderer && getTopLevelComponent() != nullptr)
-    {
-        // Defer initialization slightly to ensure window is fully ready
-        juce::MessageManager::callAsync([this]()
-        {
-            if (!gpuRenderer)
-            {
-                initializeGpuRenderer();
-            }
-        });
-    }
 }
 
 void CanvasComponent::mouseDown(const juce::MouseEvent& e)
@@ -404,14 +398,19 @@ void CanvasComponent::initializeGpuRenderer()
                 bool success = gpuRenderer->initialize(nativeHandle, getWidth(), getHeight());
                 if (!success)
                 {
-                    // GPU initialization failed, reset to use software fallback
+                    // GPU initialization failed, fall back to software rendering
                     gpuRenderer.reset();
                 }
+            }
+            else
+            {
+                // No native handle available, reset and try later
+                gpuRenderer.reset();
             }
         }
         else
         {
-            // No window peer available yet, reset and try later
+            // No peer available yet, reset and try later
             gpuRenderer.reset();
         }
     }
@@ -569,4 +568,25 @@ void CanvasComponent::drawBrushCursor(juce::Graphics& g)
 juce::Colour CanvasComponent::getNebulaAccentColor() const 
 { 
     return juce::Colour(0xff00bcd4); // Cyan from mockups
+}
+
+void CanvasComponent::parentHierarchyChanged()
+{
+    // Update UI component references when parent changes
+    if (topStrip)
+        topStrip->updateParentReferences();
+    if (bottomBar)
+        bottomBar->updateParentReferences();
+}
+
+void CanvasComponent::visibilityChanged()
+{
+#ifdef _WIN32
+    if (isShowing() && gpuRenderer && !gpuRenderer->isInitialized())
+    {
+        if (auto* peer = getPeer())
+            if (auto* handle = peer->getNativeHandle())
+                gpuRenderer->initialize(handle, getWidth(), getHeight());
+    }
+#endif
 }

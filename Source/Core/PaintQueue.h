@@ -37,6 +37,11 @@ struct PaintEvent
           flags(f), color(0xFFFFFFFF), binIndex(0), timestamp(0.0) {}
 };
 
+#if _MSC_VER
+  #pragma warning(push)
+  #pragma warning(disable:4324)
+#endif
+
 template <typename T, size_t Capacity>
 class PaintQueue 
 {
@@ -165,6 +170,10 @@ private:
     alignas(64) std::atomic<size_t> writeIndex{0}; // Producer cache line
     alignas(64) std::atomic<size_t> readIndex{0};  // Consumer cache line
 };
+
+#if _MSC_VER
+  #pragma warning(pop)
+#endif
 
 // Type aliases for specific paint queues
 using SpectralPaintQueue = PaintQueue<PaintEvent, 4096>;    // UI → Audio paint events

@@ -26,6 +26,9 @@ public:
     void sliderValueChanged(juce::Slider* slider) override;
     void comboBoxChanged(juce::ComboBox* comboBoxThatHasChanged) override;
     
+    // Parent hierarchy updates
+    void updateParentReferences() {}
+    
 private:
     SpectralCanvasProAudioProcessor& audioProcessor;
     CanvasComponent& canvasComponent;

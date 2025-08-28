@@ -23,6 +23,7 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
     void parentHierarchyChanged() override;
+    void visibilityChanged() override;
     
     // Mouse interaction for paint gestures
     void mouseDown(const juce::MouseEvent& e) override;

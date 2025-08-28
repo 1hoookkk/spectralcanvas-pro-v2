@@ -29,6 +29,9 @@ public:
     void updateFFTSize(int fftSize);
     void updateServiceHealth(bool audioOk, bool gpuOk);
     
+    // Parent hierarchy updates
+    void updateParentReferences() {}
+    
 private:
     SpectralCanvasProAudioProcessor& audioProcessor;
     CanvasComponent& canvasComponent;

@@ -19,31 +19,44 @@
 #endif
 
 // Cache-aligned storage for optimal performance
+#if _MSC_VER
+  #pragma warning(push)
+  #pragma warning(disable:4324)
+#endif
+
 template<typename T, size_t Alignment = 64>
 struct alignas(Alignment) AlignedStorage
 {
-    T data;
-    
-    AlignedStorage() noexcept : data{} {}
-    
-    // Perfect-forwarding constructor (works for std::atomic, std::array, etc.)
+    T data{};
+
+    AlignedStorage() noexcept = default;
+
     template <typename... Args>
     explicit AlignedStorage(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>)
         : data(std::forward<Args>(args)...) {}
-    
-    // Delete copy/move constructors to prevent atomic copy issues
+
     AlignedStorage(const AlignedStorage&) = delete;
     AlignedStorage& operator=(const AlignedStorage&) = delete;
     AlignedStorage(AlignedStorage&&) = delete;
     AlignedStorage& operator=(AlignedStorage&&) = delete;
-    
+
+    T&       get()       noexcept { return data; }
+    const T& get() const noexcept { return data; }
+
     operator T&() noexcept { return data; }
     operator const T&() const noexcept { return data; }
-    T& get() noexcept { return data; }
-    const T& get() const noexcept { return data; }
 };
 
+#if _MSC_VER
+  #pragma warning(pop)
+#endif
+
 // RT-safe circular buffer with atomic indices
+#if _MSC_VER
+  #pragma warning(push)
+  #pragma warning(disable:4324)
+#endif
+
 template<typename T, size_t Size>
 class RTCircularBuffer
 {
@@ -120,6 +133,10 @@ private:
     AlignedStorage<std::atomic<size_t>> writeIndex_;
     AlignedStorage<std::atomic<size_t>> readIndex_;
 };
+
+#if _MSC_VER
+  #pragma warning(pop)
+#endif
 
 // RT-safe windowing functions (pre-computed at initialization)
 template<size_t WindowSize>

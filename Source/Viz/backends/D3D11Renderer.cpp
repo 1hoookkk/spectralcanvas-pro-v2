@@ -29,38 +29,62 @@ bool D3D11Renderer::initialize(void* nativeWindowHandle, int width, int height)
     
     // Create D3D11 device and context
     if (!createDevice(hwnd))
+    {
+        lastError_ = "Failed to create D3D11 device";
         return false;
+    }
         
     // Create swap chain
     if (!createSwapChain(hwnd, width, height))
+    {
+        lastError_ = "Failed to create swap chain";
         return false;
+    }
         
     // Create render targets
     if (!createRenderTargets())
+    {
+        lastError_ = "Failed to create render targets";
         return false;
+    }
         
     // Check device capabilities
     checkCapabilities();
     
     // Create shaders
     if (!createShaders())
+    {
+        lastError_ = "Failed to create shaders";
         return false;
+    }
         
     // Create buffers
     if (!createBuffers())
+    {
+        lastError_ = "Failed to create buffers";
         return false;
+    }
         
     // Create state objects
     if (!createStates())
+    {
+        lastError_ = "Failed to create state objects";
         return false;
+    }
         
     // Create spectral texture
     if (!createSpectralTexture(spectralWidth_, spectralHeight_))
+    {
+        lastError_ = "Failed to create spectral texture";
         return false;
+    }
         
     // Create MaskAtlas for paint-to-audio system
     if (!createMaskAtlas())
+    {
+        lastError_ = "Failed to create mask atlas";
         return false;
+    }
     
     initialized_ = true;
     lastError_.clear();
@@ -85,41 +109,40 @@ void D3D11Renderer::shutdown()
     initialized_ = false;
 }
 
-bool D3D11Renderer::createDevice(HWND windowHandle)
+bool D3D11Renderer::createDevice(HWND /*windowHandle*/)
 {
-    UINT createDeviceFlags = 0;
+    UINT flags = 0;
     #ifdef _DEBUG
-        createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
+        flags |= D3D11_CREATE_DEVICE_DEBUG;
     #endif
-    
-    D3D_FEATURE_LEVEL featureLevels[] = {
-        D3D_FEATURE_LEVEL_11_1,
-        D3D_FEATURE_LEVEL_11_0,
-        D3D_FEATURE_LEVEL_10_1,
-        D3D_FEATURE_LEVEL_10_0
-    };
-    
-    D3D_FEATURE_LEVEL featureLevel;
-    HRESULT hr = D3D11CreateDevice(
-        nullptr,                    // Use default adapter
-        D3D_DRIVER_TYPE_HARDWARE,
-        nullptr,                    // No software module
-        createDeviceFlags,
-        featureLevels,
-        ARRAYSIZE(featureLevels),
-        D3D11_SDK_VERSION,
-        &device_,
-        &featureLevel,
-        &deviceContext_
-    );
-    
+
+    const D3D_FEATURE_LEVEL req[] =
+    { D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0 };
+    D3D_FEATURE_LEVEL got{};
+
+    Microsoft::WRL::ComPtr<ID3D11Device> dev;
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext> ctx;
+
+    HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags,
+                                   req, (UINT)std::size(req), D3D11_SDK_VERSION,
+                                   dev.GetAddressOf(), &got, ctx.GetAddressOf());
+
     if (FAILED(hr))
     {
-        logD3D11Error(hr, "D3D11CreateDevice");
-        return false;
+        // software fallback so the app still opens without a good GPU/driver
+        hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, flags,
+                               req, (UINT)std::size(req), D3D11_SDK_VERSION,
+                               dev.GetAddressOf(), &got, ctx.GetAddressOf());
+        if (FAILED(hr))
+        {
+            lastError_ = "D3D11CreateDevice (HW + WARP) failed";
+            return false;
+        }
     }
-    
-    return true;
+
+    device_ = dev;
+    deviceContext_ = ctx;
+    return device_ && deviceContext_; // must be valid
 }
 
 bool D3D11Renderer::createSwapChain(HWND windowHandle, int width, int height)
@@ -603,9 +626,9 @@ void D3D11Renderer::setupBrushBlendStates()
 
 void D3D11Renderer::beginFrame()
 {
-    if (!initialized_)
+    if (!initialized_ || !deviceContext_ || !renderTargetView_ || !depthStencilView_)
         return;
-        
+    
     drawCalls_ = 0;
     
     // Clear render target
@@ -635,7 +658,7 @@ void D3D11Renderer::endFrame()
 
 void D3D11Renderer::present()
 {
-    if (!initialized_)
+    if (!initialized_ || !swapChain_)
         return;
         
     swapChain_->Present(1, 0); // VSync enabled
@@ -643,7 +666,7 @@ void D3D11Renderer::present()
 
 void D3D11Renderer::updateSpectralTexture(const SpectralFrame& frame)
 {
-    if (!spectralTexture_)
+    if (!spectralTexture_ || !deviceContext_)
         return;
     
     D3D11_MAPPED_SUBRESOURCE mappedResource;
@@ -670,6 +693,8 @@ void D3D11Renderer::updateSpectralTexture(const SpectralFrame& frame)
 void D3D11Renderer::updateConstants()
 {
     // Update spectral constants
+    if (!deviceContext_ || !spectralConstants_)
+        return;
     D3D11_MAPPED_SUBRESOURCE mappedResource;
     HRESULT hr = deviceContext_->Map(spectralConstants_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
     if (SUCCEEDED(hr))
@@ -691,7 +716,7 @@ void D3D11Renderer::updateConstants()
 
 void D3D11Renderer::renderSpectralVisualization()
 {
-    if (!initialized_)
+    if (!initialized_ || !deviceContext_)
         return;
     
     // Set shaders
@@ -715,11 +740,17 @@ void D3D11Renderer::renderSpectralVisualization()
 
 void D3D11Renderer::renderParticleSystem()
 {
+    if (!initialized_ || !deviceContext_)
+        return;
+    
     // TODO: Implement particle system rendering
 }
 
 void D3D11Renderer::renderGestureTrails()
 {
+    if (!initialized_ || !deviceContext_)
+        return;
+    
     // TODO: Implement gesture trail rendering
 }
 
@@ -739,8 +770,15 @@ void D3D11Renderer::resizeBuffers(int width, int height)
     windowWidth_ = width;
     windowHeight_ = height;
     
+    if (!initialized_ || !swapChain_)
+        return;
     cleanupRenderTargets();
-    swapChain_->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0);
+    HRESULT hr = swapChain_->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0);
+    if (FAILED(hr))
+    {
+        logD3D11Error(hr, "ResizeBuffers");
+        return;
+    }
     createRenderTargets();
 }
 
@@ -777,6 +815,10 @@ void D3D11Renderer::handleDeviceLost()
 bool D3D11Renderer::compileShaderFromFile(const std::string& filename, const std::string& entryPoint,
                                           const std::string& target, ID3DBlob** outBlob)
 {
+    (void)filename;
+    (void)entryPoint;
+    (void)target;
+    (void)outBlob;
     // TODO: Load and compile HLSL files from disk
     return false; // Fall back to inline shaders for now
 }

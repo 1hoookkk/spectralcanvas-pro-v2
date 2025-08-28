@@ -57,6 +57,11 @@ private:
 };
 
 // Spectral data frame for Audio Thread → UI Thread communication
+#if _MSC_VER
+  #pragma warning(push)
+  #pragma warning(disable:4324)
+#endif
+
 struct SpectralFrame
 {
     static constexpr size_t FFT_SIZE = 512;
@@ -81,6 +86,10 @@ struct SpectralFrame
     }
 };
 
+#if _MSC_VER
+  #pragma warning(pop)
+#endif
+
 // Parameter update for UI Thread → Audio Thread communication  
 struct ParameterUpdate
 {
@@ -96,6 +105,11 @@ struct ParameterUpdate
 };
 
 // MaskColumn for GPU → Audio Thread communication
+#if _MSC_VER
+  #pragma warning(push)
+  #pragma warning(disable:4324)
+#endif
+
 struct MaskColumn
 {
     static constexpr size_t MAX_BINS = 1024; // Support up to 2048 FFT (1024 bins)
@@ -119,6 +133,10 @@ struct MaskColumn
         }
     }
 };
+
+#if _MSC_VER
+  #pragma warning(pop)
+#endif
 
 // Type aliases for specific queue configurations
 using SpectralDataQueue = SpscRing<SpectralFrame, 16>;      // Audio → UI
