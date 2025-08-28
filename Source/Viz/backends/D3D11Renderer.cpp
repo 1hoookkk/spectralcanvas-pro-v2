@@ -112,9 +112,10 @@ void D3D11Renderer::shutdown()
 bool D3D11Renderer::createDevice(HWND /*windowHandle*/)
 {
     UINT flags = 0;
-    #ifdef _DEBUG
-        flags |= D3D11_CREATE_DEVICE_DEBUG;
-    #endif
+    // Disable debug layer to prevent debugger breaks during initialization
+    // #ifdef _DEBUG
+    //     flags |= D3D11_CREATE_DEVICE_DEBUG;
+    // #endif
 
     const D3D_FEATURE_LEVEL req[] =
     { D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0 };
