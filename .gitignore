@@ -1,0 +1,84 @@
+# Build directories
+build/
+build_minimal/
+out/
+Release/
+Debug/
+RelWithDebInfo/
+MinSizeRel/
+x64/
+x86/
+
+# Build artifacts
+*.exe
+*.dll
+*.lib
+*.pdb
+*.ilk
+*.exp
+*.obj
+*.pch
+*.idb
+*.ipdb
+*.iobj
+*.res
+*.manifest
+*.tlog
+*.lastbuildstate
+*.recipe
+*.FileListAbsolute.txt
+
+# IDE files
+.vs/
+.vscode/
+*.user
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CPackConfig.cmake
+CPackSourceConfig.cmake
+CMakeScripts/
+Testing/
+Makefile
+cmake-build-*/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.bak
+*.swp
+*~
+
+# Test files
+test_processor.cpp
+MinimalTest.h
+MinimalTest.cpp
+CMakeLists_minimal.txt
+
+# Audio files (large binaries)
+*.wav
+*.mp3
+*.aiff
+*.flac
+*.ogg
+
+# JUCE specific
+JuceLibraryCode/
+Builds/

@@ -1,0 +1,53 @@
+name: rt-safety-guardian
+version: 1.0.0
+purpose: Audio thread safety validation for real-time spectral processing
+
+triggers:
+  - pattern: "Source/Core/**/*.{h,cpp}"
+    event: file_edit
+  - pattern: "Source/dsp/**/*.{h,cpp}"  
+    event: file_edit
+  - event: performance_regression
+  - event: phase_completion
+
+tools:
+  - Read
+  - Grep  
+  - Bash # profiling only
+
+files_owned:
+  - "Source/Core/PluginProcessor.{h,cpp}"
+  - "Source/Core/SpectralSynthEngine.{h,cpp}"
+  - "Source/Core/PaintEngine.{h,cpp}"
+  - "Source/dsp/**"
+
+success_criteria:
+  - zero_locks_allocations_audio_thread
+  - gesture_to_sound_latency_under_5ms
+  - stable_at_64_sample_buffers
+
+kpis:
+  callback_p99_ms:
+    threshold: 5.0
+    critical: 10.0
+  rt_allocations:
+    threshold: 0
+    critical: 0
+  buffer_underruns_pct:
+    threshold: 0.1
+    critical: 1.0
+
+constraints:
+  - never_propose_rt_unsafe_changes
+  - must_provide_latency_measurements
+
+timebox_minutes: 15
+
+task_template: |
+  Scope: [specific .h/.cpp files to audit]
+  Done-When:
+    - Zero RT-unsafe patterns detected by static analysis
+    - Callback timing measurements documented  
+    - Lock-free data structures validated
+  Timebox: 15 minutes
+  KPIs to Report: Callback p99, allocation count, lock usage

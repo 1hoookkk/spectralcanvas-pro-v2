@@ -1,0 +1,105 @@
+cmake_minimum_required(VERSION 3.22)
+project(SpectralCanvasPro VERSION 0.1.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+include(FetchContent)
+FetchContent_Declare(juce
+  GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
+  GIT_TAG 8.0.8
+)
+FetchContent_MakeAvailable(juce)
+
+juce_add_plugin(SpectralCanvasPro
+    COMPANY_NAME "SpectralCanvas"
+    VERSION "0.1.0"
+    IS_SYNTH TRUE
+    PLUGIN_CODE Scp1
+    FORMATS VST3 Standalone
+    PRODUCT_NAME "spectralCanvas Pro"
+    MICROPHONE_PERMISSION_ENABLED FALSE
+    BUNDLE_ID com.spectralcanvas.pro
+)
+
+target_sources(SpectralCanvasPro PRIVATE
+    # Main plugin files
+    Source/SpectralCanvasProAudioProcessor.h
+    Source/SpectralCanvasProAudioProcessor.cpp
+    Source/SpectralCanvasProEditor.h
+    Source/SpectralCanvasProEditor.cpp
+    
+    # Core system
+    Source/Core/Params.h
+    Source/Core/MessageBus.h
+    Source/Core/RealtimeSafeTypes.h
+    Source/Core/PaintQueue.h
+    
+    # DSP processing
+    Source/DSP/SpectralEngine.h
+    Source/DSP/SpectralEngine.cpp
+    
+    # GUI components
+    Source/GUI/CanvasComponent.h
+    Source/GUI/CanvasComponent.cpp
+    Source/GUI/TopStrip.h
+    Source/GUI/TopStrip.cpp
+    Source/GUI/BottomBar.h
+    Source/GUI/BottomBar.cpp
+    
+    # GPU rendering
+    Source/Viz/GpuRenderer.h
+    Source/Viz/GpuRenderer.cpp
+    Source/Viz/backends/D3D11Renderer.h
+    Source/Viz/backends/D3D11Renderer.cpp
+    
+    # Shader resources (HLSL files - temporarily excluded from build)
+    # Source/Viz/shaders/FullscreenQuad.hlsl
+    # Source/Viz/shaders/ParticleSystem.hlsl
+    # Source/Viz/shaders/SpectralVisualization.hlsl
+    # Source/Viz/shaders/ShaderCommon.hlsl
+    # Source/Viz/shaders/ShaderConfig.hlsl
+)
+
+target_compile_definitions(SpectralCanvasPro
+    PRIVATE
+      JUCE_WEB_BROWSER=0
+      JUCE_USE_CURL=0
+      JUCE_DISPLAY_SPLASH_SCREEN=0
+      JUCE_VST3_CAN_REPLACE_VST2=0
+      JUCE_STRICT_REFCOUNTEDPOINTER=1
+)
+
+# Windows-specific defines
+if(WIN32)
+    target_compile_definitions(SpectralCanvasPro PRIVATE
+        NOMINMAX 
+        WIN32_LEAN_AND_MEAN
+    )
+endif()
+
+target_link_libraries(SpectralCanvasPro
+    PRIVATE
+      juce::juce_audio_utils
+      juce::juce_dsp
+      juce::juce_gui_extra
+)
+
+# Windows-specific D3D11 libraries
+if(WIN32)
+    target_link_libraries(SpectralCanvasPro PRIVATE
+        d3d11.lib
+        dxgi.lib
+        d3dcompiler.lib
+    )
+endif()
+
+if (MSVC)
+  target_compile_options(SpectralCanvasPro PRIVATE /W4 /permissive- /std:c++20)
+  # Debug configuration
+  target_compile_options(SpectralCanvasPro PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+  # Release optimization
+  target_compile_options(SpectralCanvasPro PRIVATE $<$<CONFIG:Release>:/O2>)
+else()
+  target_compile_options(SpectralCanvasPro PRIVATE -Wall -Wextra -Wpedantic -std=c++20)
+endif()
