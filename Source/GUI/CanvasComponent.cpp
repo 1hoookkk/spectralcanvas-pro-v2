@@ -45,8 +45,8 @@ void CanvasComponent::paint(juce::Graphics& g)
         // Title and basic status
         g.drawText("Phase 2-3 Validation Metrics", 8, 8, 400, 14, juce::Justification::left);
         
-        bool testActive = audioProcessor.apvts.getParameterAsValue(Params::ParameterIDs::testModeActive).getValue();
-        g.drawText(juce::String::formatted("Test Mode: %s", testActive ? "ACTIVE" : "OFF"), 
+        bool useTestFeeder = audioProcessor.apvts.getParameterAsValue(Params::ParameterIDs::useTestFeeder).getValue();
+        g.drawText(juce::String::formatted("Test Mode: %s", useTestFeeder ? "TestFeeder" : "Phase4"), 
                    8, 22, 200, 14, juce::Justification::left);
         
         // Show active audio path and write status

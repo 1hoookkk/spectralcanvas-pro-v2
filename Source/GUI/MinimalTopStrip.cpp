@@ -33,7 +33,7 @@ MinimalTopStrip::MinimalTopStrip(juce::AudioProcessorValueTreeState& apvts)
     
     // Parameter attachments
     testToggleAttachment = std::make_unique<juce::ButtonParameterAttachment>(
-        *apvts.getParameter(Params::ParameterIDs::testModeActive), testToggleButton);
+        *apvts.getParameter(Params::ParameterIDs::useTestFeeder), testToggleButton);
     
     maskDepthAttachment = std::make_unique<juce::SliderParameterAttachment>(
         *apvts.getParameter(Params::ParameterIDs::maskDepth), maskDepthSlider);
