@@ -39,6 +39,7 @@ target_sources(SpectralCanvasPro PRIVATE
     Source/Core/RealtimeSafeTypes.h
     Source/Core/PaintQueue.h
     Source/Core/LatencyTracker.h
+    Source/Core/GPUStatus.h
     
     # DSP processing
     Source/DSP/SpectralEngine.h
@@ -63,11 +64,15 @@ target_sources(SpectralCanvasPro PRIVATE
     Source/GUI/MinimalTopStrip.cpp
     Source/GUI/MinimalBottomStrip.h
     Source/GUI/MinimalBottomStrip.cpp
+    Source/GUI/PerfHUD.h
+    Source/GUI/PerfHUD.cpp
+    Source/GUI/HudFormatter.h
     
     # GPU rendering
     Source/Viz/GpuRenderer.h
     Source/Viz/GpuRenderer.cpp
     Source/Viz/RenderThread.h
+    Source/Viz/DeviceLostHandler.h
     Source/Viz/backends/D3D11Renderer.h
     Source/Viz/backends/D3D11Renderer.cpp
     
@@ -88,6 +93,18 @@ target_compile_definitions(SpectralCanvasPro
       JUCE_STRICT_REFCOUNTEDPOINTER=1
       PHASE4_EXPERIMENT=1
 )
+
+# GPU resilience feature flag
+option(DISABLE_GPU_RESILIENCE "Disable GPU device-lost recovery and WARP fallback" OFF)
+if(DISABLE_GPU_RESILIENCE)
+    target_compile_definitions(SpectralCanvasPro PRIVATE DISABLE_GPU_RESILIENCE=1)
+endif()
+
+# Performance HUD feature flag  
+option(DISABLE_PERF_HUD "Disable Performance HUD overlay" OFF)
+if(DISABLE_PERF_HUD)
+    target_compile_definitions(SpectralCanvasPro PRIVATE DISABLE_PERF_HUD=1)
+endif()
 
 # Windows-specific defines
 if(WIN32)
@@ -130,4 +147,5 @@ include(pluginval.cmake)
 option(BUILD_TESTING "Enable testing with CTest" ON)
 if(BUILD_TESTING)
     enable_testing()
+    add_subdirectory(Tests)
 endif()

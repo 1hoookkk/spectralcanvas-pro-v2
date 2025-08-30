@@ -114,6 +114,91 @@ struct ParameterUpdate {
 - **Precision**: Sub-pixel gesture accuracy for fine control
 - **Stability**: Graceful handling of MIDI controller floods
 
+## GPU Resilience Architecture (Phase 4)
+
+### Device-Lost Recovery State Machine
+```
+States: OK → REMOVED → RECREATING → OK (success path)
+                    ↓
+                WARP_FALLBACK (after 3 failed hardware attempts)
+```
+
+### Detection Points
+- After Present() calls (DXGI_ERROR_DEVICE_REMOVED)
+- Before texture updates (GetDeviceRemovedReason)
+- In beginFrame() for early detection
+
+### Recovery Choreography
+1. **Detection**: GetDeviceRemovedReason() != S_OK
+2. **Resource Release**: Clean up all device-dependent resources
+3. **Recreation**: Try hardware device first, fallback to WARP after 3 failures  
+4. **Resource Rebuild**: Recreate swapchain, textures, shaders, buffers
+5. **Resume**: Continue rendering with <100ms recovery time
+
+### Staging Buffer Pattern (RT-Safe)
+```cpp
+// RT-safe texture updates - no mapping of default GPU resources
+CPU → Staging Texture (Map/Unmap)
+Staging → GPU Texture (CopySubresourceRegion)
+```
+
+### Telemetry (Atomic Counters)
+- `device_state`: Current device state (OK/REMOVED/RECREATING/WARP_FALLBACK)
+- `frame_time_us`: Rolling average frame time
+- `recovery_count`: Number of successful recoveries
+- `dropped_frame_count`: Frames lost during device issues
+- `peak_frame_time_us`: Peak frame time in current window
+
+## Observability & Performance Monitoring
+
+### Performance HUD (Phase 5)
+Real-time metrics overlay providing zero-impact monitoring of critical performance indicators:
+
+```
+┌─ Performance HUD Layout ──────────┐
+│ Lat: 3.2/8.1ms    CPU: 8.5%      │  ← Paint→audio latency p50/p99, CPU usage
+│ GPU: 14.2ms HW     Rec: 0ms       │  ← GPU frame p95, device mode, recovery time
+│ Q: 7/8  D: 0  XR: 0               │  ← Queue depth/cap, drops, xruns  
+│ 48kHz/512          [H]ide         │  ← Audio config, toggle hint
+└────────────────────────────────────┘
+```
+
+**Implementation Strategy:**
+- UI thread sampling at 30Hz (no RT impact)
+- Atomic reads from existing telemetry counters
+- Toggle via parameter automation or 'H' key
+- Render budget: ≤1ms per frame
+- Rollback: DISABLE_PERF_HUD compile flag
+
+### Metrics Data Flow
+```
+┌─────────────────┐    Atomic Reads   ┌──────────────┐    JSON Export   ┌──────────────┐
+│   Audio Thread  │─ ─ ─ ─ ─ ─ ─ ─ ─ ►│   PerfHUD    │─ ─ ─ ─ ─ ─ ─ ─ ►│   CI System   │
+│                 │   (RTLatencyTracker)│              │  (30Hz sampling) │              │
+│ • processBlock  │                    │ • UI overlay │                  │ • Regression  │
+│ • Queue depths  │                    │ • 180x100px  │                  │   Detection   │
+│ • Xrun counters │                    │ • Parameter  │                  │ • Thresholds  │
+│                 │                    │   controlled │                  │   Alerting    │
+└─────────────────┘                    └──────────────┘                  └──────────────┘
+        │                                       ↑
+        │            Atomic Reads               │
+        ▼                                       │
+┌─────────────────┐                            │
+│   GPU Thread    │ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘
+│                 │   (GPUStatus struct)
+│ • Frame timing  │
+│ • Device state  │
+│ • Recovery cnt  │
+│ • WARP mode     │
+└─────────────────┘
+```
+
+### CI Integration
+- PerfHarness exports JSON with `--emit-json` flag
+- Soft gates: WARN if latency_p99 > 15ms or CPU > 20%
+- Future hard gates after baseline stabilization
+- Artifact upload: `spectralcanvas-perf-${BUILD}.json`
+
 ## Risk Analysis & Mitigation Strategies
 
 ### 🔴 Critical Risks
@@ -124,9 +209,9 @@ struct ParameterUpdate {
 - *Mitigation*: Comprehensive code review checklist + automated testing
 
 **2. GPU Driver Compatibility Issues**
-- *Risk*: Inconsistent D3D11 feature support across hardware vendors
-- *Detection*: Feature capability queries at initialization
-- *Mitigation*: Conservative feature usage + OpenGL fallback path
+- *Risk*: Inconsistent D3D11 feature support across hardware vendors + device removal
+- *Detection*: Feature capability queries + device-lost monitoring
+- *Mitigation*: WARP fallback + device recovery choreography + staging buffers
 
 **3. DAW Integration Problems**
 - *Risk*: Plugin state/threading model conflicts with host DAWs

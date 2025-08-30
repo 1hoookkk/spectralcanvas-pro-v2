@@ -5,6 +5,11 @@
 #include <thread>
 #include <chrono>
 #include <fstream>
+#include <cmath>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 using namespace test;
 
@@ -104,7 +109,8 @@ public:
         // Fill with test signal
         for (int ch = 0; ch < numChannels; ++ch) {
             for (int n = 0; n < blockSize; ++n) {
-                buffer.setSample(ch, n, 0.1f * std::sin(2.0 * M_PI * 440.0 * n / sampleRate));
+                float sample = 0.1f * std::sin(2.0 * M_PI * 440.0 * n / sampleRate);
+                buffer.setSample(ch, n, sample);
             }
         }
         

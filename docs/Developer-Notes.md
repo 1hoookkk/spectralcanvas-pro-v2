@@ -206,7 +206,53 @@ cmake --build build --target pluginval_rt_safety
 
 # Performance regression check
 build/Tests/PerfHarness --baseline perf_baseline.json
+
+# Export performance metrics to JSON
+build/Tests/PerfHarness --baseline --emit-json perf_metrics.json
 ```
+
+## Performance HUD 📊
+
+### Overview
+The Performance HUD provides real-time monitoring of critical audio/visual metrics without impacting RT performance. It samples atomic counters at 30Hz from the UI thread only.
+
+### Displayed Metrics:
+```
+┌─────────────────────────┐
+│ Lat:3.2/8.1ms CPU:8.5% │  (p50/p99 latency, CPU usage)
+│ GPU:14.2ms HW Rec:0ms   │  (GPU frame time, device mode, last recovery)
+│ Q:7/8 D:0 XR:0          │  (queue depth/cap, drops, xruns)
+│ 48kHz/512 [H]ide        │  (sample rate/block, toggle hint)
+└─────────────────────────┘
+```
+
+### Usage:
+```bash
+# Toggle via parameter (automatable)
+showPerfHud = 1.0  # Show HUD
+showPerfHud = 0.0  # Hide HUD
+
+# Keyboard shortcut
+Press 'H' key to toggle visibility
+
+# Access from code
+auto metrics = perfHUD.getLastMetrics();
+float latencyP50 = metrics.latencyP50Ms;
+```
+
+### Implementation Details:
+- **Thread Safety**: UI thread sampling only, atomic loads with memory_order_acquire
+- **Update Rate**: 30Hz timer (33ms intervals) to avoid UI overhead
+- **Render Budget**: ≤1ms per frame, typically <0.5ms
+- **RT Impact**: Zero - no audio thread polling or locks
+- **Rollback**: Compile flag DISABLE_PERF_HUD=ON to disable completely
+
+### Metrics Sources:
+- **Latency**: RTLatencyTracker (paint→audio latency in µs)
+- **CPU**: ContinuousVerification (block processing time estimation)
+- **GPU**: GPUStatus atomic struct (frame time, device state, recovery)
+- **Queues**: SPSC queue atomic counters (depth, drops)
+- **XRuns**: Host-provided underrun detection when available
 
 ## Emergency Procedures 🚨
 

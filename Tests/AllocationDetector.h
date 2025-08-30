@@ -82,10 +82,10 @@ void* operator new[](size_t size);
 void operator delete(void* ptr) noexcept;
 void operator delete[](void* ptr) noexcept;
 
-// Placement new variants (should be safe)
-inline void* operator new(size_t, void* ptr) noexcept { return ptr; }
-inline void* operator new[](size_t, void* ptr) noexcept { return ptr; }
-inline void operator delete(void*, void*) noexcept {}
-inline void operator delete[](void*, void*) noexcept {}
+// Placement new variants are already provided by the standard library
+// inline void* operator new(size_t, void* ptr) noexcept { return ptr; }
+// inline void* operator new[](size_t, void* ptr) noexcept { return ptr; }
+// inline void operator delete(void*, void*) noexcept {}
+// inline void operator delete[](void*, void*) noexcept {}
 
 #endif // ENABLE_RT_SAFETY_CHECKS

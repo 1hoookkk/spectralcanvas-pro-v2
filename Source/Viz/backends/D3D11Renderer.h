@@ -1,6 +1,8 @@
 #pragma once
 
 #include "../GpuRenderer.h"
+#include "../DeviceLostHandler.h"
+#include "../../Core/GPUStatus.h"
 
 #ifdef _WIN32
 #include <d3d11.h>
@@ -53,6 +55,12 @@ public:
     bool checkDeviceStatus() override;
     void handleDeviceLost() override;
     std::string getLastError() const override { return lastError_; }
+    
+    // GPU resilience methods
+    GPUStatus::DeviceState getDeviceState() const;
+    uint32_t getRecoveryCount() const;
+    bool isUsingWarp() const { return usingWarpRenderer_; }
+    const GPUStatus& getGPUStatus() const { return gpuStatus_; }
 
 private:
     // D3D11 Core objects
@@ -66,6 +74,9 @@ private:
     ComPtr<ID3D11Texture2D> spectralTexture_;
     ComPtr<ID3D11ShaderResourceView> spectralSRV_;
     ComPtr<ID3D11UnorderedAccessView> spectralUAV_;
+    
+    // Staging texture for RT-safe spectral updates
+    ComPtr<ID3D11Texture2D> spectralStagingTexture_;
     
     // MaskAtlas resources for paint-to-audio system
     ComPtr<ID3D11Texture2D> maskAtlas_;
@@ -162,8 +173,17 @@ private:
     mutable UINT64 lastFrameStart_ = 0;
     mutable UINT64 lastFrameEnd_ = 0;
     
+    // GPU resilience state
+    GPUStatus gpuStatus_;
+    DeviceLostHandler deviceLostHandler_;
+    bool usingWarpRenderer_ = false;
+    
+    // Frame timing for telemetry
+    std::chrono::high_resolution_clock::time_point frameStartTime_;
+    
     // Private methods
     bool createDevice(HWND windowHandle);
+    bool createDevice(HWND windowHandle, bool forceWarp);
     bool createSwapChain(HWND windowHandle, int width, int height);
     bool createRenderTargets();
     bool createShaders();
@@ -175,6 +195,11 @@ private:
     bool compileShaderFromFile(const std::string& filename, const std::string& entryPoint,
                                const std::string& target, ID3DBlob** outBlob);
     void logD3D11Error(HRESULT hr, const std::string& operation);
+    
+    // Device recovery methods
+    bool tryRecreateDevice(HWND windowHandle);
+    void releaseDeviceResources();
+    bool recreateDeviceResources();
     
     // MaskAtlas system methods
     bool createMaskAtlas();
@@ -189,6 +214,7 @@ private:
     void cleanupShaders();
     void cleanupBuffers();
     void cleanupMaskAtlas();
+    void cleanupSpectralTextures();
 }; 
 
 #endif // _WIN32

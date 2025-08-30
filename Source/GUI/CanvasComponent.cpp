@@ -114,7 +114,7 @@ void CanvasComponent::paint(juce::Graphics& g)
         }
         
         // Panel background so text never overlaps the canvas
-        juce::Rectangle<int> panel(8, 8, 520, 120);
+        juce::Rectangle<int> panel(8, 8, 520, 140); // Increased height for GPU status
         g.setColour(juce::Colours::black.withAlpha(0.6f));
         g.fillRoundedRectangle(panel.toFloat(), 6.0f);
         
@@ -147,6 +147,11 @@ void CanvasComponent::paint(juce::Graphics& g)
         g.drawText("FPS: " + juce::String(currentFPS, 1)
                    + " | Processed Samples: " + juce::String((long long)metrics.processedSamples)
                    + " | XRuns: " + juce::String((int)metrics.xrunCount),
+                   x, y, panel.getWidth()-20, lh, juce::Justification::left); y += lh;
+        
+        // GPU Status Display
+        g.setColour(juce::Colours::lightblue);
+        g.drawText("GPU: Phase 4 Resilience Ready (No Active Renderer)",
                    x, y, panel.getWidth()-20, lh, juce::Justification::left);
         
         // Avoid unused warnings

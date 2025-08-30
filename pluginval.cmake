@@ -4,13 +4,13 @@
 # Find or download pluginval
 if(WIN32)
     set(PLUGINVAL_URL "https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip")
-    set(PLUGINVAL_EXECUTABLE "${CMAKE_BINARY_DIR}/pluginval/pluginval.exe")
+    set(PLUGINVAL_EXECUTABLE "${CMAKE_BINARY_DIR}/pluginval.exe")
 elseif(APPLE)
     set(PLUGINVAL_URL "https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip")
-    set(PLUGINVAL_EXECUTABLE "${CMAKE_BINARY_DIR}/pluginval/pluginval.app/Contents/MacOS/pluginval")
+    set(PLUGINVAL_EXECUTABLE "${CMAKE_BINARY_DIR}/pluginval.app/Contents/MacOS/pluginval")
 else()
     set(PLUGINVAL_URL "https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Linux.zip")
-    set(PLUGINVAL_EXECUTABLE "${CMAKE_BINARY_DIR}/pluginval/pluginval")
+    set(PLUGINVAL_EXECUTABLE "${CMAKE_BINARY_DIR}/pluginval")
 endif()
 
 # Download pluginval if not present
