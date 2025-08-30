@@ -55,6 +55,7 @@ private:
     std::unique_ptr<juce::ToggleButton> snapToScaleButton;
     std::unique_ptr<juce::ComboBox> tuningSelector;    // 12-TET, Custom...
     std::unique_ptr<juce::ToggleButton> fastPaintButton;
+    std::unique_ptr<juce::ToggleButton> modernPaintButton; // A/B switch
     
     // Visual styling
     const int stripHeight = 60;

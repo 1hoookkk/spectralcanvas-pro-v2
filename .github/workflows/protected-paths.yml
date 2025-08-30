@@ -1,0 +1,22 @@
+name: Block Protected Paths
+on: [pull_request]
+jobs:
+  block-protected:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Check protected changes
+        uses: tj-actions/changed-files@v45
+        id: changed
+      - name: Fail if protected paths changed without approval label
+        run: |
+          PROT=$(printf "%s\n" ${{ steps.changed.outputs.all_changed_files }} | grep -E '^Source/(audio|engine)/' || true)
+          if [ -n "$PROT" ]; then
+            echo "Protected files changed:"
+            echo "$PROT"
+            curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.number }}/labels" \
+              | grep -qi 'touch-engines-approved' && exit 0
+            echo "❌ Missing label 'touch-engines-approved'"; exit 1
+          fi

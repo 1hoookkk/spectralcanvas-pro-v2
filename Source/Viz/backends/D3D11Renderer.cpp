@@ -5,7 +5,10 @@
 #include <sstream>
 #include <chrono>
 
-D3D11Renderer::D3D11Renderer() = default;
+D3D11Renderer::D3D11Renderer()
+{
+    deviceLostHandler_.initialize(&gpuStatus_);
+}
 
 D3D11Renderer::~D3D11Renderer()
 {
@@ -100,6 +103,7 @@ void D3D11Renderer::shutdown()
     cleanupBuffers();
     cleanupShaders(); 
     cleanupRenderTargets();
+    cleanupSpectralTextures();
     
     // Release core objects
     swapChain_.Reset();
@@ -485,7 +489,7 @@ bool D3D11Renderer::createSpectralTexture(int width, int height)
     spectralWidth_ = width;
     spectralHeight_ = height;
     
-    // Create texture for spectral data
+    // Create GPU texture for spectral data (default usage, no CPU access)
     D3D11_TEXTURE2D_DESC texDesc = {};
     texDesc.Width = width;
     texDesc.Height = height;
@@ -493,18 +497,31 @@ bool D3D11Renderer::createSpectralTexture(int width, int height)
     texDesc.ArraySize = 1;
     texDesc.Format = DXGI_FORMAT_R32_FLOAT; // Single channel float for magnitude
     texDesc.SampleDesc.Count = 1;
-    texDesc.Usage = D3D11_USAGE_DYNAMIC;
+    texDesc.Usage = D3D11_USAGE_DEFAULT;  // Changed from DYNAMIC for staging pattern
     texDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-    texDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    texDesc.CPUAccessFlags = 0;           // No CPU access for GPU texture
     
     HRESULT hr = device_->CreateTexture2D(&texDesc, nullptr, &spectralTexture_);
     if (FAILED(hr))
     {
-        logD3D11Error(hr, "CreateTexture2D (spectral)");
+        logD3D11Error(hr, "CreateTexture2D (spectral GPU)");
         return false;
     }
     
-    // Create shader resource view
+    // Create staging texture for CPU updates (RT-safe pattern)
+    D3D11_TEXTURE2D_DESC stagingDesc = texDesc;
+    stagingDesc.Usage = D3D11_USAGE_STAGING;
+    stagingDesc.BindFlags = 0;            // No binding for staging texture
+    stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    
+    hr = device_->CreateTexture2D(&stagingDesc, nullptr, &spectralStagingTexture_);
+    if (FAILED(hr))
+    {
+        logD3D11Error(hr, "CreateTexture2D (spectral staging)");
+        return false;
+    }
+    
+    // Create shader resource view for GPU texture
     hr = device_->CreateShaderResourceView(spectralTexture_.Get(), nullptr, &spectralSRV_);
     if (FAILED(hr))
     {
@@ -630,7 +647,18 @@ void D3D11Renderer::beginFrame()
     if (!initialized_ || !deviceContext_ || !renderTargetView_ || !depthStencilView_)
         return;
     
+    frameStartTime_ = std::chrono::high_resolution_clock::now();
     drawCalls_ = 0;
+    
+#ifndef DISABLE_GPU_RESILIENCE
+    // Attempt device recovery if needed
+    if (gpuStatus_.getDeviceState() == GPUStatus::REMOVED && 
+        deviceLostHandler_.shouldAttemptRecovery())
+    {
+        HWND hwnd = nullptr; // TODO: Store window handle for recovery
+        tryRecreateDevice(hwnd);
+    }
+#endif
     
     // Clear render target
     float clearColor[4] = { 0.1f, 0.1f, 0.18f, 1.0f };
@@ -660,22 +688,57 @@ void D3D11Renderer::endFrame()
 void D3D11Renderer::present()
 {
     if (!initialized_ || !swapChain_)
+    {
+        gpuStatus_.recordDroppedFrame();
         return;
+    }
+    
+#ifndef DISABLE_GPU_RESILIENCE
+    // Check for device removal before present
+    if (deviceLostHandler_.checkDeviceRemoval(device_.Get()))
+    {
+        gpuStatus_.recordDroppedFrame();
+        return; // Skip present, will attempt recovery on next frame
+    }
+#endif
         
-    swapChain_->Present(1, 0); // VSync enabled
+    HRESULT hr = swapChain_->Present(1, 0); // VSync enabled
+    
+#ifndef DISABLE_GPU_RESILIENCE
+    // Check for device removal after present
+    if (FAILED(hr) && (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET))
+    {
+        deviceLostHandler_.checkDeviceRemoval(device_.Get());
+        gpuStatus_.recordDroppedFrame();
+        return;
+    }
+#endif
+    
+    // Record successful frame completion with timing
+    auto frame_end = std::chrono::high_resolution_clock::now();
+    auto frame_duration = std::chrono::duration_cast<std::chrono::microseconds>(
+        frame_end - frameStartTime_);
+    gpuStatus_.recordFrameTime(static_cast<uint32_t>(frame_duration.count()));
 }
 
 void D3D11Renderer::updateSpectralTexture(const SpectralFrame& frame)
 {
-    if (!spectralTexture_ || !deviceContext_)
+    if (!spectralTexture_ || !spectralStagingTexture_ || !deviceContext_)
         return;
     
+#ifndef DISABLE_GPU_RESILIENCE
+    // Check for device removal before texture operations
+    if (deviceLostHandler_.checkDeviceRemoval(device_.Get()))
+        return;
+#endif
+    
+    // Use staging buffer for RT-safe updates (no direct mapping of default GPU resources)
     D3D11_MAPPED_SUBRESOURCE mappedResource;
-    HRESULT hr = deviceContext_->Map(spectralTexture_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+    HRESULT hr = deviceContext_->Map(spectralStagingTexture_.Get(), 0, D3D11_MAP_WRITE, 0, &mappedResource);
     if (FAILED(hr))
         return;
     
-    // Copy spectral magnitude data to texture
+    // Copy spectral magnitude data to staging texture
     float* textureData = static_cast<float*>(mappedResource.pData);
     const size_t pitch = mappedResource.RowPitch / sizeof(float);
     
@@ -688,7 +751,15 @@ void D3D11Renderer::updateSpectralTexture(const SpectralFrame& frame)
         }
     }
     
-    deviceContext_->Unmap(spectralTexture_.Get(), 0);
+    deviceContext_->Unmap(spectralStagingTexture_.Get(), 0);
+    
+    // Copy from staging to GPU texture (no render loop stall)
+    deviceContext_->CopySubresourceRegion(
+        spectralTexture_.Get(), 0,     // Destination
+        0, 0, 0,                       // Dest coords
+        spectralStagingTexture_.Get(), 0,  // Source
+        nullptr                        // Copy entire resource
+    );
 }
 
 void D3D11Renderer::updateConstants()
@@ -802,15 +873,23 @@ bool D3D11Renderer::checkDeviceStatus()
 {
     if (!device_)
         return false;
-        
+    
+#ifndef DISABLE_GPU_RESILIENCE        
+    return !deviceLostHandler_.checkDeviceRemoval(device_.Get());
+#else
     HRESULT hr = device_->GetDeviceRemovedReason();
     return SUCCEEDED(hr);
+#endif
 }
 
 void D3D11Renderer::handleDeviceLost()
 {
-    // TODO: Implement device lost recovery
-    lastError_ = "Device lost - recovery not implemented";
+#ifndef DISABLE_GPU_RESILIENCE
+    deviceLostHandler_.beginRecovery();
+    lastError_ = "Device lost - attempting recovery";
+#else
+    lastError_ = "Device lost - recovery disabled";
+#endif
 }
 
 bool D3D11Renderer::compileShaderFromFile(const std::string& filename, const std::string& entryPoint,
@@ -1038,6 +1117,180 @@ void D3D11Renderer::cleanupMaskAtlas()
     brushAddBlend_.Reset();
     brushSubtractBlend_.Reset();
     brushAlphaBlend_.Reset();
+}
+
+void D3D11Renderer::cleanupSpectralTextures()
+{
+    spectralTexture_.Reset();
+    spectralSRV_.Reset();
+    spectralUAV_.Reset();
+    spectralStagingTexture_.Reset();
+}
+
+// GPU resilience methods
+GPUStatus::DeviceState D3D11Renderer::getDeviceState() const
+{
+    return gpuStatus_.getDeviceState();
+}
+
+uint32_t D3D11Renderer::getRecoveryCount() const
+{
+    return gpuStatus_.getRecoveryCount();
+}
+
+bool D3D11Renderer::createDevice(HWND windowHandle, bool forceWarp)
+{
+    UINT flags = 0;
+    // Disable debug layer to prevent debugger breaks during initialization
+    // #ifdef _DEBUG
+    //     flags |= D3D11_CREATE_DEVICE_DEBUG;
+    // #endif
+
+    const D3D_FEATURE_LEVEL req[] =
+    { D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0 };
+    D3D_FEATURE_LEVEL got{};
+
+    Microsoft::WRL::ComPtr<ID3D11Device> dev;
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext> ctx;
+
+    HRESULT hr = S_OK;
+    
+    if (forceWarp)
+    {
+        // Force WARP for fallback mode
+        hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, flags,
+                               req, (UINT)std::size(req), D3D11_SDK_VERSION,
+                               dev.GetAddressOf(), &got, ctx.GetAddressOf());
+        usingWarpRenderer_ = SUCCEEDED(hr);
+    }
+    else
+    {
+        // Try hardware first
+        hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags,
+                               req, (UINT)std::size(req), D3D11_SDK_VERSION,
+                               dev.GetAddressOf(), &got, ctx.GetAddressOf());
+        usingWarpRenderer_ = false;
+        
+        if (FAILED(hr))
+        {
+            // Software fallback so the app still opens without a good GPU/driver
+            hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, flags,
+                                   req, (UINT)std::size(req), D3D11_SDK_VERSION,
+                                   dev.GetAddressOf(), &got, ctx.GetAddressOf());
+            usingWarpRenderer_ = SUCCEEDED(hr);
+        }
+    }
+    
+    if (FAILED(hr))
+    {
+        lastError_ = "D3D11CreateDevice failed (both HW and WARP)";
+        return false;
+    }
+
+    device_ = dev;
+    deviceContext_ = ctx;
+    return device_ && deviceContext_;
+}
+
+bool D3D11Renderer::tryRecreateDevice(HWND windowHandle)
+{
+#ifndef DISABLE_GPU_RESILIENCE
+    if (!deviceLostHandler_.shouldAttemptRecovery())
+        return false;
+    
+    DeviceRecoveryTimer timer;
+    deviceLostHandler_.beginRecovery();
+    
+    // Release all device-dependent resources
+    releaseDeviceResources();
+    
+    // Determine if we should use WARP fallback
+    bool use_warp = deviceLostHandler_.shouldFallbackToWarp();
+    
+    // Attempt device recreation
+    bool device_created = false;
+    if (use_warp)
+    {
+        device_created = createDevice(windowHandle, true);
+    }
+    else
+    {
+        device_created = createDevice(windowHandle, false);
+    }
+    
+    if (!device_created)
+    {
+        deviceLostHandler_.recordFailedRecovery();
+        return false;
+    }
+    
+    // Recreate all device-dependent resources
+    if (!recreateDeviceResources())
+    {
+        deviceLostHandler_.recordFailedRecovery();
+        return false;
+    }
+    
+    // Recovery successful
+    deviceLostHandler_.recordSuccessfulRecovery(usingWarpRenderer_);
+    lastError_.clear();
+    
+    uint32_t recovery_time = timer.getElapsedMicroseconds();
+    // Record recovery time in telemetry if needed
+    
+    return true;
+#else
+    return false;
+#endif
+}
+
+void D3D11Renderer::releaseDeviceResources()
+{
+    // Release in reverse order of creation
+    cleanupMaskAtlas();
+    cleanupBuffers();
+    cleanupShaders();
+    cleanupRenderTargets();
+    cleanupSpectralTextures();
+    
+    // Release core objects
+    swapChain_.Reset();
+    deviceContext_.Reset();
+    device_.Reset();
+    
+    initialized_ = false;
+}
+
+bool D3D11Renderer::recreateDeviceResources()
+{
+    // Recreate resources in same order as initialization
+    HWND hwnd = nullptr; // TODO: Store window handle
+    
+    if (!createSwapChain(hwnd, windowWidth_, windowHeight_))
+        return false;
+    
+    if (!createRenderTargets())
+        return false;
+    
+    checkCapabilities();
+    
+    if (!createShaders())
+        return false;
+    
+    if (!createBuffers())
+        return false;
+    
+    if (!createStates())
+        return false;
+    
+    if (!createSpectralTexture(spectralWidth_, spectralHeight_))
+        return false;
+    
+    if (!createMaskAtlas())
+        return false;
+    
+    initialized_ = true;
+    return true;
 }
 
 #endif // _WIN32

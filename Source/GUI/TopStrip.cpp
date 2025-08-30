@@ -103,6 +103,10 @@ void TopStrip::setupControls()
     fastPaintButton->addListener(this);
     addAndMakeVisible(*fastPaintButton);
     
+    modernPaintButton = std::make_unique<juce::ToggleButton>("Modern DSP");
+    modernPaintButton->addListener(this);
+    addAndMakeVisible(*modernPaintButton);
+    
     // Connect to parameters
     updateControlStates();
 }
@@ -194,9 +198,15 @@ void TopStrip::resized()
             tuningSelector->setBounds(x, y, 65, controlHeight);
             x += 75;
             
-            if (x < width - 80)
+            if (x < width - 155)
             {
                 fastPaintButton->setBounds(x, y + 2, 70, 18);
+                x += 75;
+                
+                if (x < width - 80)
+                {
+                    modernPaintButton->setBounds(x, y + 2, 75, 18);
+                }
             }
         }
     }
@@ -222,6 +232,13 @@ void TopStrip::buttonClicked(juce::Button* button)
         if (auto* param = audioProcessor.getValueTreeState().getParameter("fast_paint_mode"))
         {
             param->setValueNotifyingHost(fastPaintButton->getToggleState() ? 1.0f : 0.0f);
+        }
+    }
+    else if (button == modernPaintButton.get())
+    {
+        if (auto* param = audioProcessor.getValueTreeState().getParameter("use_modern_paint"))
+        {
+            param->setValueNotifyingHost(modernPaintButton->getToggleState() ? 1.0f : 0.0f);
         }
     }
 }
@@ -330,6 +347,11 @@ void TopStrip::updateControlStates()
     if (auto* brushStrengthParam = params.getParameter("brush_strength"))
     {
         brushStrengthSlider->setValue(brushStrengthParam->getValue(), juce::dontSendNotification);
+    }
+    
+    if (auto* modernPaintParam = params.getParameter("use_modern_paint"))
+    {
+        modernPaintButton->setToggleState(modernPaintParam->getValue() > 0.5f, juce::dontSendNotification);
     }
 }
 

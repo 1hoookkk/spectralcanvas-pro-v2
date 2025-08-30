@@ -1,4 +1,9 @@
 {
+  "permissions": {
+    "allow": ["Read", "Grep", "Glob", "Edit", "MultiEdit"],
+    "ask": ["Bash", "WebFetch", "Task", "Write", "NotebookEdit"],
+    "defaultMode": "plan"
+  },
   "env": {
     "BASH_DEFAULT_TIMEOUT_MS": "300000",
     "BASH_MAX_TIMEOUT_MS": "600000"
