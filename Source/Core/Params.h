@@ -53,8 +53,26 @@ namespace ParameterIDs
     const juce::String fastPaintMode = "fast_paint_mode"; // Low-latency mode for interaction
     const juce::String gpuAcceleration = "gpu_acceleration";
     
+    // Phase 2-3 Minimal UI Parameters
+    const juce::String testModeActive = "test_mode_active"; // Start/Stop test toggle
+    const juce::String maskDepth = "mask_depth";           // 0..1 mask intensity
+    const juce::String debugOverlayEnabled = "debug_overlay_enabled"; // Debug overlay toggle
+    const juce::String visualGamma = "visual_gamma";       // 0.5..1.5 display gamma (Phase 3)
+    const juce::String visualGain = "visual_gain";         // 0..4 display gain (Phase 3)
+    const juce::String freezeDisplay = "freeze_display";   // Freeze/scroll toggle (Phase 3)
+    
+    // Phase 5 Performance HUD Parameters  
+    const juce::String showPerfHud = "show_perf_hud";     // Performance overlay toggle
+    
     // Master Parameters
     const juce::String gain = "gain";                     // -24..+24 dB master gain
+    
+    // Phase 4 Experiment Parameters
+    const juce::String useTestFeeder = "use_test_feeder";         // Rollback to old system
+    const juce::String keyFilterEnabled = "key_filter_enabled";   // Enable key filter
+    const juce::String scaleType = "scale_type";                  // 0=Chromatic, 1=Major, 2=Minor  
+    const juce::String rootNote = "root_note";                    // 0-11 pitch classes
+    const juce::String oscGain = "osc_gain";                      // 0-1 oscillator gain
 }
 
 // Parameter ranges and defaults
@@ -126,9 +144,33 @@ namespace ParameterRanges
     const juce::NormalisableRange<float> particleCountRange(100.0f, 5000.0f, 10.0f);
     const float particleCountDefault = 1000.0f;
     
+    // Phase 2-3 Minimal UI
+    const float maskDepthDefault = 0.7f; // Default mask intensity
+    const juce::NormalisableRange<float> maskDepthRange(0.0f, 1.0f, 0.01f);
+    
+    const juce::NormalisableRange<float> visualGammaRange(0.5f, 1.5f, 0.01f);
+    const float visualGammaDefault = 1.0f;
+    
+    const juce::NormalisableRange<float> visualGainRange(0.0f, 4.0f, 0.01f);
+    const float visualGainDefault = 1.0f;
+    
+    // Phase 5 Performance HUD
+    const juce::NormalisableRange<float> showPerfHudRange(0.0f, 1.0f, 1.0f);
+    const float showPerfHudDefault = 0.0f; // Off by default
+    
     // Master
     const juce::NormalisableRange<float> gainRange(-24.0f, 24.0f, 0.01f);
     const float gainDefault = 0.0f;
+    
+    // Phase 4 Experiment Parameters
+    const float useTestFeederDefault = 1.0f;             // Use test feeder by default (true) for immediate audio
+    const float keyFilterEnabledDefault = 1.0f;          // Key filter enabled (true)
+    const juce::NormalisableRange<float> scaleTypeRange(0.0f, 2.0f, 1.0f);
+    const float scaleTypeDefault = 1.0f;                 // Major scale
+    const juce::NormalisableRange<float> rootNoteRange(0.0f, 11.0f, 1.0f);
+    const float rootNoteDefault = 0.0f;                  // C
+    const juce::NormalisableRange<float> oscGainRange(0.0f, 1.0f, 0.01f);
+    const float oscGainDefault = 0.2f;                   // Conservative gain
 }
 
 // Create parameter layout for ValueTreeState
@@ -234,10 +276,58 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     parameters.push_back(std::make_unique<juce::AudioParameterBool>(
         ParameterIDs::gpuAcceleration, "GPU Acceleration", true));
     
+    // Phase 2-3 Minimal UI Parameters
+    parameters.push_back(std::make_unique<juce::AudioParameterBool>(
+        ParameterIDs::testModeActive, "Test Mode Active", false));
+    
+    parameters.push_back(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::maskDepth, "Mask Depth",
+        ParameterRanges::maskDepthRange, ParameterRanges::maskDepthDefault));
+    
+    parameters.push_back(std::make_unique<juce::AudioParameterBool>(
+        ParameterIDs::debugOverlayEnabled, "Debug Overlay", false));
+    
+    parameters.push_back(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::visualGamma, "Visual Gamma",
+        ParameterRanges::visualGammaRange, ParameterRanges::visualGammaDefault));
+    
+    parameters.push_back(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::visualGain, "Visual Gain",
+        ParameterRanges::visualGainRange, ParameterRanges::visualGainDefault));
+    
+    parameters.push_back(std::make_unique<juce::AudioParameterBool>(
+        ParameterIDs::freezeDisplay, "Freeze Display", false));
+    
+    // Phase 5 Performance HUD
+    parameters.push_back(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::showPerfHud, "Show Performance HUD",
+        ParameterRanges::showPerfHudRange, ParameterRanges::showPerfHudDefault));
+    
     // Master Gain
     parameters.push_back(std::make_unique<juce::AudioParameterFloat>(
         ParameterIDs::gain, "Master Gain",
         ParameterRanges::gainRange, ParameterRanges::gainDefault));
+    
+    // Phase 4 Experiment Parameters
+    parameters.push_back(std::make_unique<juce::AudioParameterBool>(
+        ParameterIDs::useTestFeeder, "Use Test Feeder",
+        ParameterRanges::useTestFeederDefault));
+        
+    parameters.push_back(std::make_unique<juce::AudioParameterBool>(
+        ParameterIDs::keyFilterEnabled, "Key Filter Enabled", 
+        ParameterRanges::keyFilterEnabledDefault));
+        
+    parameters.push_back(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::scaleType, "Scale Type",
+        ParameterRanges::scaleTypeRange, ParameterRanges::scaleTypeDefault));
+        
+    parameters.push_back(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::rootNote, "Root Note",
+        ParameterRanges::rootNoteRange, ParameterRanges::rootNoteDefault));
+        
+    parameters.push_back(std::make_unique<juce::AudioParameterFloat>(
+        ParameterIDs::oscGain, "Oscillator Gain",
+        ParameterRanges::oscGainRange, ParameterRanges::oscGainDefault));
     
     return { parameters.begin(), parameters.end() };
 }

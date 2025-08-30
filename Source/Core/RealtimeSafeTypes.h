@@ -11,12 +11,33 @@
 
 // RT-safe assertions for debug builds
 #ifdef JUCE_DEBUG
+    #include <thread>
     #define RT_SAFE_ASSERT(condition) juce_assert(condition)
-    #define RT_SAFE_LOG(message) juce::Logger::writeToLog("[RT-SAFE] " message)
+    // No RT logging - use atomic counters instead
+    #define RT_SAFE_LOG(message) ((void)0)
+    
+    // Thread ID validation for RT paths
+    extern std::thread::id g_audioThreadId;
+    #define RT_ASSERT_AUDIO_THREAD() RT_SAFE_ASSERT(std::this_thread::get_id() == g_audioThreadId)
 #else
     #define RT_SAFE_ASSERT(condition) ((void)0)
     #define RT_SAFE_LOG(message) ((void)0)
+    #define RT_ASSERT_AUDIO_THREAD() ((void)0)
 #endif
+
+// Static assertions for RT-safe types
+template<typename T>
+constexpr bool is_rt_safe_v = std::is_trivially_copyable_v<T> && 
+                              std::is_standard_layout_v<T> && 
+                              !std::is_pointer_v<T>;
+
+#define RT_SAFE_TYPE_ASSERT(T) static_assert(is_rt_safe_v<T>, #T " must be RT-safe (trivially copyable, standard layout, non-pointer)")
+
+// Lock-free atomic validation
+template<typename T>
+constexpr bool is_lock_free_atomic_v = std::atomic<T>::is_always_lock_free;
+
+#define LOCK_FREE_ATOMIC_ASSERT(T) static_assert(is_lock_free_atomic_v<T>, #T " atomic must be lock-free for RT safety")
 
 // Cache-aligned storage for optimal performance
 #if _MSC_VER

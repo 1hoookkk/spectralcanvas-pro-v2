@@ -3,12 +3,20 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "SpectralCanvasProAudioProcessor.h"
 #include "GUI/CanvasComponent.h"
+#include "GUI/MinimalTopStrip.h"
+#include "GUI/PerfHUD.h"
 
 /**
- * Main editor component that hosts the full-bleed nebula canvas interface
- * Transformed from basic placeholder to match the UI mockups
+ * Phase 2-3 Minimal UI Editor
+ * 
+ * STRIPPED DOWN VERSION:
+ * - MinimalTopStrip for essential controls only
+ * - Full-bleed CanvasComponent for painting
+ * - NO fancy panels until Phase 4
+ * - RT-safe with <5ms paint-to-audio latency
  */
-class SpectralCanvasProEditor : public juce::AudioProcessorEditor
+class SpectralCanvasProEditor : public juce::AudioProcessorEditor,
+                              public juce::AudioProcessorValueTreeState::Listener
 {
 public:
     SpectralCanvasProEditor(SpectralCanvasProAudioProcessor&);
@@ -16,31 +24,20 @@ public:
 
     void paint(juce::Graphics&) override;
     void resized() override;
+    bool keyPressed(const juce::KeyPress& key) override;
     
-    // Layout helpers
-    void layoutControlPanels();
-    juce::Rectangle<int> getCanvasArea() const;
-    juce::Rectangle<int> getControlStripArea() const;
+    // Parameter listener for HUD toggle
+    void parameterChanged(const juce::String& parameterID, float newValue) override;
 
 private:
     SpectralCanvasProAudioProcessor& audioProcessor;
     
-    // Main canvas component (full-bleed nebula interface) 
+    // Phase 2-3 Minimal UI Components
     std::unique_ptr<CanvasComponent> canvasComponent;
+    std::unique_ptr<MinimalTopStrip> topStrip;
     
-    // Control panels
-    class SourceEnginePanel;
-    class BrushControlsPanel;
-    class PostFXPanel;
-    
-    std::unique_ptr<SourceEnginePanel> sourceEnginePanel;
-    std::unique_ptr<BrushControlsPanel> brushControlsPanel;
-    std::unique_ptr<PostFXPanel> postFXPanel;
-    
-    // Parameter attachments for real-time control
-    std::unique_ptr<juce::SliderParameterAttachment> modeSliderAttachment;
-    std::unique_ptr<juce::SliderParameterAttachment> brushSizeAttachment;
-    std::unique_ptr<juce::SliderParameterAttachment> brushStrengthAttachment;
+    // Phase 5 Performance HUD
+    std::unique_ptr<PerfHUD> perfHUD;
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectralCanvasProEditor)
 };
