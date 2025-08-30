@@ -186,6 +186,7 @@ private:
     std::atomic<float> oscGain_{0.2f};
     std::atomic<int> scaleType_{1};  // 0=Chromatic, 1=Major, 2=Minor
     std::atomic<int> rootNote_{0};   // 0-11
+    std::atomic<bool> useModernPaint_{false};
     
     // Diagnostic counter to prove Phase4 branch executes
     std::atomic<uint64_t> phase4Blocks_{0};

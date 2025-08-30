@@ -73,6 +73,9 @@ namespace ParameterIDs
     const juce::String scaleType = "scale_type";                  // 0=Chromatic, 1=Major, 2=Minor  
     const juce::String rootNote = "root_note";                    // 0-11 pitch classes
     const juce::String oscGain = "osc_gain";                      // 0-1 oscillator gain
+    
+    // A/B Testing Parameters
+    const juce::String useModernPaint = "use_modern_paint";       // A/B switch: ModernPaint vs Phase4Synth
 }
 
 // Parameter ranges and defaults
@@ -171,6 +174,9 @@ namespace ParameterRanges
     const float rootNoteDefault = 0.0f;                  // C
     const juce::NormalisableRange<float> oscGainRange(0.0f, 1.0f, 0.01f);
     const float oscGainDefault = 0.2f;                   // Conservative gain
+    
+    // A/B Testing Parameters
+    const float useModernPaintDefault = 0.0f;            // Default to Phase4Synth (false)
 }
 
 // Create parameter layout for ValueTreeState
@@ -328,6 +334,11 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     parameters.push_back(std::make_unique<juce::AudioParameterFloat>(
         ParameterIDs::oscGain, "Oscillator Gain",
         ParameterRanges::oscGainRange, ParameterRanges::oscGainDefault));
+    
+    // A/B Testing Parameters
+    parameters.push_back(std::make_unique<juce::AudioParameterBool>(
+        ParameterIDs::useModernPaint, "Use Modern Paint",
+        ParameterRanges::useModernPaintDefault));
     
     return { parameters.begin(), parameters.end() };
 }

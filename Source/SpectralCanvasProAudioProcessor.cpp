@@ -90,6 +90,7 @@ void SpectralCanvasProAudioProcessor::prepareToPlay(double sampleRate, int sampl
     oscGain_.store(apvts.getParameterAsValue(Params::ParameterIDs::oscGain).getValue(), std::memory_order_relaxed);
     scaleType_.store(static_cast<int>(apvts.getParameterAsValue(Params::ParameterIDs::scaleType).getValue()), std::memory_order_relaxed);
     rootNote_.store(static_cast<int>(apvts.getParameterAsValue(Params::ParameterIDs::rootNote).getValue()), std::memory_order_relaxed);
+    useModernPaint_.store(apvts.getParameterAsValue(Params::ParameterIDs::useModernPaint).getValue(), std::memory_order_relaxed);
     
     // Add parameter listeners for real-time updates
     apvts.addParameterListener(Params::ParameterIDs::useTestFeeder, this);
@@ -97,6 +98,7 @@ void SpectralCanvasProAudioProcessor::prepareToPlay(double sampleRate, int sampl
     apvts.addParameterListener(Params::ParameterIDs::oscGain, this);
     apvts.addParameterListener(Params::ParameterIDs::scaleType, this);
     apvts.addParameterListener(Params::ParameterIDs::rootNote, this);
+    apvts.addParameterListener(Params::ParameterIDs::useModernPaint, this);
 #endif
 }
 
@@ -117,7 +119,16 @@ void SpectralCanvasProAudioProcessor::setAudioPathFromParams()
 {
 #ifdef PHASE4_EXPERIMENT
     const bool useTestFeeder = useTestFeeder_.load(std::memory_order_relaxed);
-    AudioPath path = useTestFeeder ? AudioPath::TestFeeder : AudioPath::Phase4Synth;
+    const bool useModernPaint = useModernPaint_.load(std::memory_order_relaxed);
+    
+    AudioPath path;
+    if (useTestFeeder)
+        path = AudioPath::TestFeeder;
+    else if (useModernPaint)
+        path = AudioPath::ModernPaint;
+    else
+        path = AudioPath::Phase4Synth;
+        
     currentPath_.store(path, std::memory_order_release);
 #else
     currentPath_.store(AudioPath::TestFeeder, std::memory_order_release);
@@ -365,6 +376,11 @@ void SpectralCanvasProAudioProcessor::parameterChanged(const juce::String& param
     if (parameterID == Params::ParameterIDs::useTestFeeder)
     {
         useTestFeeder_.store(newValue > 0.5f, std::memory_order_relaxed);
+        setAudioPathFromParams(); // Update path atomically
+    }
+    else if (parameterID == Params::ParameterIDs::useModernPaint)
+    {
+        useModernPaint_.store(newValue > 0.5f, std::memory_order_relaxed);
         setAudioPathFromParams(); // Update path atomically
     }
     else if (parameterID == Params::ParameterIDs::keyFilterEnabled)
