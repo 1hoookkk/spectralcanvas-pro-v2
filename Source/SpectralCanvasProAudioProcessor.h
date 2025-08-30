@@ -192,6 +192,11 @@ private:
     std::atomic<uint64_t> maskPushCount_{0};
     std::atomic<uint64_t> maskDropCount_{0};
     
+    // RT-safe diagnostic counters (no logging in RT paths)
+    std::atomic<uint64_t> pushMaskAttempts_{0};
+    std::atomic<uint64_t> pushMaskRejects_{0};
+    std::atomic<uint64_t> silenceBlockCount_{0};
+    
     // Debug tap for SPSC integrity diagnosis
     Phase4DebugTap debugTap_;
     

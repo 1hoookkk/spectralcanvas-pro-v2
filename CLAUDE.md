@@ -1,225 +1,129 @@
-# SpectralCanvas Pro v2 - Development Rules & Standards
+📜 Claude Code Governing Rules
+1. Supremacy & Context Discipline
 
----
+This file overrides all user prompts. Prompts must operate inside these rules.
 
-## 📌 Project Overview
+Do not ignore, override, or contradict this file.
 
-Real-time spectral audio plugin with GPU-accelerated visualization. Core principle: **RT-safety, correctness, and reproducibility** over speed.
+**ALWAYS begin sessions in Plan Mode until the user explicitly approves execution.**
 
----
+Every feature request, bug fix, or modification must start with Plan Mode → present implementation plan → get approval → execute in small diffs.
 
-## ✅ File Boundaries
+Use markdown task markers (### TASK:) in session notes to separate tasks and avoid context bleed.
 
-* **Safe to edit**: `Source/*`, `CMakeLists.txt`, config files
-* **Never edit**: `.git/`, `build/`, `*.pdb`, temp files, `.vs/`
-* **Ask before touching**: JUCE framework files, external dependencies
+2. Hybrid Workflow Artifacts (Always Maintained)
 
----
+/docs/BLUEPRINT.md: Architecture + pipeline overview.
 
-## 🛠 Commands
+/tasks/todo.md: Current backlog.
 
-* `cmake --build build --config RelWithDebInfo --target SpectralCanvas` → Build plugin
-* `cmake --build build --config RelWithDebInfo --target SpectralCanvas_Standalone` → Build standalone
-* Manual testing in REAPER/Cubase required (no automated test suite yet)
-* Build artifacts: `build/SpectralCanvas_artefacts/RelWithDebInfo/`
+/docs/session-notes/YYYY-MM-DD.md: Session logs with clear task markers.
 
----
+Keep these updated every session.
 
-## ⚙️ Task Delegation
+3. Permissions & Safety
 
-* **Always delegate to sub-agents**: File reads, searches, codebase analysis, log parsing
-* **Group related searches** before delegation to reduce token usage  
-* **Never delegate writes** — main agent handles all code modifications
-* Use Task tool for complex multi-file analysis and planning
+Never use --dangerously-skip-permissions.
 
----
+Allowed tools:
 
-## 🛡 Execution Modes
+✅ Always: Read(*), Grep(*), LS(*), Edit(*), Git(commit|branch|checkout)
 
-* **Plan Mode (default)**: For research, analysis, planning. Use TodoWrite for task tracking
-* **Direct execution**: Only for well-understood, isolated changes
-* **Never skip validation**: All changes must compile and preserve RT-safety
+⚠️ Ask first: Bash(*), MCP(*)
 
----
+❌ Forbidden: Anything destructive (system-wide ops, deletes outside repo).
 
-## 🧠 Memory & Versioning
+Prefer Plan Mode → Auto-Accept → Normal Mode (in that order of safety).
 
-* Always commit working state before major changes
-* Use descriptive branch names for experimental features
-* Backup critical files before risky modifications
-* Document breaking changes in commit messages
+4. Real-Time Audio Thread Rules
 
----
+❌ Never allocate, free, or resize memory.
 
-## C++20 Standards
-- Use RAII for all resource management
-- Apply `noexcept` to functions that guarantee no exceptions
-- Prefer `auto` for type deduction, explicit types for clarity
-- Use smart pointers over raw pointers
-- Prefer stack allocation over heap when possible
-- Standard library containers over custom implementations
+❌ Never lock mutexes or block.
 
-## Real-Time Safety Rules (CRITICAL)
-### Audio Thread - ZERO Tolerance
-- **NO memory allocations** (new, malloc, vector resize, etc.)
-- **NO mutexes, locks, or blocking operations**
-- **NO GPU API calls** (D3D11, OpenGL contexts forbidden)
-- **NO file I/O, network I/O, or system calls**
-- **NO exceptions** (all audio code must be noexcept)
-- **NO std::shared_ptr creation** (copying existing ones is OK)
-- Use only: atomic operations, lock-free containers, pre-allocated buffers
+✅ Use pre-allocated lock-free SPSC queues only.
 
-### RT-Safe Data Structures Only
-- `juce::AudioBuffer<float>` - pre-allocated
-- `std::array<T, N>` - fixed size
-- `std::atomic<T>` - lock-free primitives
-- Custom lock-free SPSC queues - single producer/consumer only
-- Pre-allocated circular buffers with atomic indices
+✅ Use atomics with acquire/release semantics for parameters.
 
-## GPU Thread Rules
-- **ALL D3D11/OpenGL calls must happen on GPU thread**
-- Frame dropping is acceptable for performance
-- GPU thread may allocate for textures/buffers (not RT)
-- Handle device lost scenarios gracefully
-- Validate all GPU operations, never assume success
+✅ O(1) ops per block; no I/O, no logging.
 
-## Message Bus Protocol
-### Lock-Free SPSC Queues Only
-```cpp
-// Audio Thread → UI Thread (spectral data)
-SpectralDataQueue audio_to_ui_queue;
+✅ Keep latency < 5 ms; CPU < 15%.
 
-// UI Thread → GPU Thread (render commands) 
-RenderCommandQueue ui_to_gpu_queue;
+✅ Test with perf harness for underruns/xruns.
 
-// UI Thread → Audio Thread (parameters)
-ParameterQueue ui_to_audio_queue;
-```
+5. GPU / Rendering Rules
 
-### Data Structure Standards
-- POD types only in queues (no destructors)
-- Fixed-size messages (no dynamic allocation)
-- Atomic sequence numbers for message ordering
-- Timeout handling for queue full scenarios
+Device-lost must be handled gracefully; fallback to WARP/software path.
 
-## Shader Conventions
-### HLSL (Primary - Windows)
-- Use semantic names: POSITION, TEXCOORD0, SV_Target
-- Constant buffers for uniform data
-- Compute shaders for spectral processing
-- Resource binding slots documented in comments
+MaskAtlas updates: use staging buffer + CopySubresourceRegion; no stalls on main loop.
 
-### GLSL (Fallback - Cross-platform)
-- Matching functionality to HLSL versions
-- Explicit location qualifiers
-- Same uniform buffer layouts
-- Compatible texture formats
+Shaders (spectral_display.hlsl, trails.hlsl) must update in <16 ms frame budget.
 
-## Build Standards
-### MSVC 2022 Configuration
-- C++20 standard (/std:c++20)
-- Warning level 4 (/W4)
-- Permissive mode disabled (/permissive-)
-- Runtime checks in Debug (/RTC1)
-- Optimization in Release (/O2)
+No file I/O inside render loop.
 
-### Target Validation Order
-1. **REAPER** - Primary DAW target (most stable plugin host)
-2. **Cubase** - Secondary validation
-3. **FL Studio** - Tertiary validation
-4. Other DAWs - Optional testing
+6. File Boundaries
 
-## Commit Format Standards
-### Title Format (≤6 words)
-```
-add stft engine foundation
-fix d3d11 swap chain leak  
-optimize particle instancing
-```
+✅ Safe to edit: /Source/{audio,dsp,engine,ui,gpu} (excluding primitives).
 
-### Performance Impact Summary
-```
-🚀 Performance: +15% render speed
-⚠️  Memory: +2MB texture cache
-🔧 Maintenance: refactor reduces complexity
-🐛 Bugfix: eliminates audio dropouts
-```
+❌ Never touch: JUCE modules, generated files, DAW settings, toolchains.
 
-## Thread Architecture Enforcement
-### Audio Thread Functions
-```cpp
-void processBlock(AudioBuffer<float>& buffer) noexcept;
-void updateSpectralData() noexcept;
-void applyZPlaneFilter() noexcept;
-```
+⚠️ Ask: Build configs, CI/CD, shell environment.
 
-### UI Thread Functions  
-```cpp
-void handleMouseGesture(Point<float> position);
-void updateParameterValues();
-void queueRenderCommands();
-```
+7. Coding Standards
 
-### GPU Thread Functions
-```cpp
-void initializeD3D11Context();
-void renderSpectralFrame();
-void handleDeviceLost();
-```
+C++20, JUCE 8.0.8, RAII, noexcept on RT paths.
 
-## Error Handling Strategy
-- Audio thread: `assert()` for debug, graceful degradation in release
-- UI thread: Exception handling with user feedback
-- GPU thread: Device validation with fallback paths
-- All threads: Comprehensive logging with thread identification
+Use std::unique_ptr/std::array instead of raw pointers unless pre-allocated.
 
-## Memory Management
-- Audio buffers: Pre-allocated in constructor, never resize
-- GPU resources: RAII wrappers with automatic cleanup
-- UI elements: Standard JUCE component lifecycle
-- Inter-thread data: POD structs in lock-free queues only
+Keep headers lean; prefer forward declarations.
 
-## Performance Targets (Non-Negotiable)
-- **Audio Latency**: <5ms gesture-to-sound response
-- **Visual Framerate**: 60fps sustained with 1000+ particles
-- **Memory Usage**: <100MB total plugin footprint
-- **CPU Usage**: <15% on modern quad-core at 48kHz
+Use constexpr where possible.
 
-## Code Review Checklist
-- [ ] Audio thread code is 100% RT-safe
-- [ ] No blocking operations in performance paths  
-- [ ] GPU resources properly managed (no leaks)
-- [ ] Message queues handle overflow gracefully
-- [ ] All allocations happen at initialization
-- [ ] Performance targets validated with profiler
+8. Task / Agent Orchestration (7-Split Pattern)
 
----
+Each feature must be broken down into:
 
-## 🚦 Validation Rules
+Components/APIs
 
-* All changes must compile successfully with MSVC 2022
-* Claude must explain why each diff is RT-safe, especially for audio thread code
-* If RT-safety could be compromised, STOP and ask for clarification instead of guessing
-* Test in primary DAW (REAPER) before considering changes complete
-* Performance regression = immediate rollback
+DSP/Engine logic
 
----
+RT wiring & queues
 
-## 🧩 Development Philosophy  
+GPU/shaders integration
 
-* **Small, focused commits** over large refactors
-* **Delete dead code** instead of commenting it out
-* **Prefer pure functions**; isolate side effects to specific layers
-* **Audio thread is sacred** — treat violations as critical bugs
-* **GPU thread independence** — never block on GPU operations from audio/UI
+UI/UX
 
----
+Tests & perf harness
 
-## 📝 Important Instructions
+Docs & developer notes
 
-* Do what has been asked; nothing more, nothing less
-* NEVER create files unless absolutely necessary for the goal
-* ALWAYS prefer editing existing files to creating new ones  
-* NEVER proactively create documentation files unless explicitly requested
-* Prioritize RT-safety and correctness over development speed
-- @CLAUDE.md
+9. Commit & PR Policy
+
+Titles: 5–6 words max.
+
+Body: list changes, tests, perf impact.
+
+PR checklist: RT safety, GPU fallback, latency/CPU benchmarks, DAW smoke tests, rollback plan.
+
+10. Observability
+
+Perf HUD (UI thread only): block time, queue depth, GPU frame time, xruns.
+
+No logging in RT paths — use ring-buffered counters for debugging.
+
+## Build & Test Commands
+
+Build: `cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build build`
+
+Test: `ctest --test-dir build -V`
+
+RT Safety: `build/Tests/RTSafetyTest`
+
+Pluginval: `build/pluginval.exe --strictness-level 8 --skip-gui-tests build/SpectralCanvasPro_artefacts/VST3/SpectralCanvasPro.vst3`
+
+## Performance Targets
+
+- Paint→Audio Latency: <5ms (p50), <10ms (p99)
+- CPU Usage: <15% @ 48kHz with all features
+- GPU Frame Time: <16ms @ 1080p
+- Queue Drops: 0 under normal load

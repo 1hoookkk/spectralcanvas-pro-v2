@@ -96,15 +96,18 @@ struct ParameterUpdate {
 
 ### Audio Thread Requirements (Non-Negotiable)
 - **Latency**: <5ms total processing (STFT + filters + saturation)
-- **Memory**: Zero allocations during processBlock()
-- **CPU**: <25% single core usage at 48kHz/512 samples
+- **Memory**: Zero allocations during processBlock()  
+- **CPU**: <15% single core usage at 48kHz/64 samples (tightened target)
 - **Stability**: Zero audio dropouts under normal operating conditions
+- **Paint→Audio**: <5ms (p50), <10ms (p99) from brush stroke to audio output
 
 ### GPU Thread Requirements
-- **Framerate**: 60fps sustained with 1000+ particles
+- **Framerate**: 60fps sustained with 1000+ particles  
+- **Frame Budget**: <16ms per frame @ 1080p
 - **Resolution**: Up to 4K display support (3840x2160)
 - **Memory**: <64MB VRAM for all textures and buffers
-- **Compatibility**: DirectX 11.0+ and OpenGL 3.3+ support
+- **Compatibility**: DirectX 11.0+ with WARP fallback
+- **Device Recovery**: <100ms recovery time after device-lost events
 
 ### UI Thread Requirements  
 - **Responsiveness**: <16ms gesture-to-visual feedback

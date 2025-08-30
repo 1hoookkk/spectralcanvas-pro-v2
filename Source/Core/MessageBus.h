@@ -6,6 +6,7 @@
 #include <cstring>
 #include <cstdint>
 #include <cstddef>  // For offsetof
+#include "RealtimeSafeTypes.h"
 
 // Phase 4 experiment flag - oscillator bank with key filter
 #define PHASE4_EXPERIMENT 1
@@ -190,11 +191,20 @@ struct MaskColumn
     }
 };
 
-// DIAGNOSTIC: Static asserts to freeze MaskColumn layout and detect instance mismatch  
+// RT-SAFE: Static validations for all message types
+RT_SAFE_TYPE_ASSERT(MaskColumn);
+RT_SAFE_TYPE_ASSERT(SpectralFrame);
+RT_SAFE_TYPE_ASSERT(ParameterUpdate);
+
 static_assert(std::is_trivially_copyable_v<MaskColumn>, "MaskColumn must be POD for queue safety");
 static_assert(alignof(MaskColumn) == 32, "MaskColumn alignment changed - potential cache issues");
 static_assert(offsetof(MaskColumn, values) == 0, "values array must be at offset 0");
-// Note: Full size/offset validation temporarily disabled to allow compilation
+
+// Lock-free atomic validations for key types
+LOCK_FREE_ATOMIC_ASSERT(size_t);
+LOCK_FREE_ATOMIC_ASSERT(uint32_t);
+LOCK_FREE_ATOMIC_ASSERT(uint64_t);
+LOCK_FREE_ATOMIC_ASSERT(float);
 
 #if _MSC_VER
   #pragma warning(pop)

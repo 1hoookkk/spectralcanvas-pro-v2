@@ -56,8 +56,8 @@ void SpectralCanvasProAudioProcessor::prepareToPlay(double sampleRate, int sampl
     parameterQueue.clear();
     maskColumnQueue.clear();
     
-    // DIAGNOSTIC: Add queue address and size diagnostics
-    juce::Logger::writeToLog("[AUDIO] MaskQueue addr=" + juce::String::toHexString(reinterpret_cast<uintptr_t>(&maskColumnQueue)) + " sizeof(MaskColumn)=" + juce::String(sizeof(MaskColumn)));
+    // RT-SAFE: processBlock setup - no logging in RT path
+    // Queue diagnostics moved to UI thread for HUD display
     
 #ifdef PHASE4_EXPERIMENT
     // Initialize Phase 4 experimental components
@@ -267,14 +267,12 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     }
     
 #if JUCE_DEBUG
-    // Health check: detect silent audio in debug builds
+    // RT-SAFE: Silent audio detection using atomic counters only
     float rmsLevel = buffer.getRMSLevel(0, 0, numSamples);
     if (rmsLevel < 1e-6f) {
-        static int silenceCounter = 0;
-        if (++silenceCounter % 480 == 0) {  // Log every 10ms at 48kHz
-            const char* pathName = useTestFeeder_.load(std::memory_order_relaxed) ? "TestFeeder" : "Phase4";
-            juce::Logger::writeToLog(juce::String::formatted("Audio path (%s) producing silence", pathName));
-        }
+        silenceBlockCount_.fetch_add(1, std::memory_order_relaxed);
+    } else {
+        silenceBlockCount_.store(0, std::memory_order_relaxed);
     }
 #endif
 }
@@ -400,18 +398,20 @@ void SpectralCanvasProAudioProcessor::generateImmediateAudioFeedback()
 bool SpectralCanvasProAudioProcessor::pushMaskColumn(const MaskColumn& mask)
 {
     // DEBUG: Log that pushMaskColumn is being called
-    juce::Logger::writeToLog("*** PUSHMASKCOLUMN CALLED! *** Path=" + juce::String(static_cast<int>(getCurrentPath())));
+    // RT-SAFE: Track push attempts with atomic counter
+    pushMaskAttempts_.fetch_add(1, std::memory_order_relaxed);
     
     // TESTING: Temporarily bypass path check to force data through
     /*
     // Only push when Phase4 is active - double-check path state
     if (getCurrentPath() != AudioPath::Phase4Synth) {
-        juce::Logger::writeToLog("pushMaskColumn rejected - not Phase4 path");
+        // RT-SAFE: Count rejections for HUD display
+        pushMaskRejects_.fetch_add(1, std::memory_order_relaxed);
         return false; // Silently ignore when not in Phase4 mode
     }
     */
     
-    juce::Logger::writeToLog("pushMaskColumn proceeding to queue...");
+    // RT-SAFE: Proceeding to queue - no logging
     
 #if PHASE4_DEBUG_TAP
     // Create enhanced column with debug sequence
