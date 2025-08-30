@@ -48,7 +48,7 @@ void SpectralEngineStub::setStride(int stride) {
 void SpectralEngineStub::popAllMaskColumnsInto(MaskColumnQueue& queue) noexcept {
     if (!magnitudes_.get()) return;
     
-    // Clear magnitudes buffer for fresh accumulation this block
+    // Clear magnitudes at start of each block for proper accumulation
     std::fill_n(magnitudes_.get(), numBins_, 0.0f);
     
     // Drain all available MaskColumns from queue (non-blocking)
@@ -157,15 +157,35 @@ void SpectralEngineStub::process(juce::AudioBuffer<float>& outBuffer, float oscG
     
     // Synthesize active bins - use current stride but ensure it's reasonable
     const int safeStride = std::max(1, std::min(currentStride_, 2)); // Force max stride=2 for debugging
+    int synthesizedBins = 0;
+    float totalAmplitude = 0.0f;
+    
     for (int k = startBin; k < endBin; k += safeStride) {
         const float amplitude = smoothed_[k] * oscGain;
         
         // Skip bins below threshold (using lowered eps from header)
         if (amplitude <= eps_) continue;
         
+        // Force minimum audible amplitude for painted bins to ensure they're heard
+        const float minAmplitude = smoothed_[k] > 0.0f ? std::max(amplitude, 0.01f) : amplitude;
+        
+        // Debug: track synthesis activity
+        synthesizedBins++;
+        totalAmplitude += minAmplitude;
+        
         // Render this bin's contribution
-        renderBinAdd(outBuffer, k, amplitude);
+        renderBinAdd(outBuffer, k, minAmplitude);
     }
+    
+    // Debug log synthesis activity
+    #if JUCE_DEBUG
+    static int detailedLogCount = 0;
+    if (synthesizedBins > 0 && ++detailedLogCount % 60 == 0) { // Every ~1.25 seconds when synthesizing
+        juce::Logger::writeToLog(juce::String::formatted(
+            "SYNTHESIS: %d bins synthesized, totalAmp=%.3f, oscGain=%.3f", 
+            synthesizedBins, totalAmplitude, oscGain));
+    }
+    #endif
     
     // Debug: Add a quiet test tone at 440Hz if no paint data exists
     #if JUCE_DEBUG
@@ -175,6 +195,22 @@ void SpectralEngineStub::process(juce::AudioBuffer<float>& outBuffer, float oscG
         if (testBin > 0 && testBin < numBins_ - 1) {
             renderBinAdd(outBuffer, testBin, 0.01f * oscGain);  // Very quiet test tone
         }
+    }
+    
+    // Debug logging to verify synthesis is working
+    static int synthLogCount = 0;
+    if (++synthLogCount % 120 == 0) { // Every ~2.5 seconds
+        float outputRMS = outBuffer.getNumChannels() > 0 ? outBuffer.getRMSLevel(0, 0, numSamples) : 0.0f;
+        
+        // Check actual smoothed values
+        float maxSmoothed = 0.0f;
+        for (int k = 0; k < numBins_; ++k) {
+            if (smoothed_[k] > maxSmoothed) maxSmoothed = smoothed_[k];
+        }
+        
+        juce::Logger::writeToLog(juce::String::formatted(
+            "SYNTH: activeBins=%d, oscGain=%.3f, maxSmoothed=%.6f, outputRMS=%.6f", 
+            activeBinCount_, oscGain, maxSmoothed, outputRMS));
     }
     #endif
 }

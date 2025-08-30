@@ -32,6 +32,10 @@ target_sources(SpectralCanvasPro PRIVATE
     # Core system
     Source/Core/Params.h
     Source/Core/MessageBus.h
+    Source/Core/ParameterSnapshot.h
+    Source/Core/ReconfigManager.h
+    Source/Core/SpectralCoreEngine.h
+    Source/Core/ContinuousVerification.h
     Source/Core/RealtimeSafeTypes.h
     Source/Core/PaintQueue.h
     Source/Core/LatencyTracker.h
@@ -63,6 +67,7 @@ target_sources(SpectralCanvasPro PRIVATE
     # GPU rendering
     Source/Viz/GpuRenderer.h
     Source/Viz/GpuRenderer.cpp
+    Source/Viz/RenderThread.h
     Source/Viz/backends/D3D11Renderer.h
     Source/Viz/backends/D3D11Renderer.cpp
     
@@ -115,5 +120,14 @@ if (MSVC)
   # Release optimization
   target_compile_options(SpectralCanvasPro PRIVATE $<$<CONFIG:Release>:/O2>)
 else()
-  target_compile_options(SpectralCanvasPro PRIVATE -Wall -Wextra -Wpedantic -std=c++20)
+  target_compile_options(SpectralCanvasPro PRIVATE -Wall -Wextra -Wpedantic -std:c++20)
+endif()
+
+# Pattern #7: Include pluginval integration for continuous verification
+include(pluginval.cmake)
+
+# Enable testing for CTest integration
+option(BUILD_TESTING "Enable testing with CTest" ON)
+if(BUILD_TESTING)
+    enable_testing()
 endif()

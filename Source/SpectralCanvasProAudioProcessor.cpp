@@ -272,7 +272,7 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     if (rmsLevel < 1e-6f) {
         static int silenceCounter = 0;
         if (++silenceCounter % 480 == 0) {  // Log every 10ms at 48kHz
-            const char* pathName = useTestFeeder ? "TestFeeder" : "Phase4";
+            const char* pathName = useTestFeeder_.load(std::memory_order_relaxed) ? "TestFeeder" : "Phase4";
             juce::Logger::writeToLog(juce::String::formatted("Audio path (%s) producing silence", pathName));
         }
     }

@@ -85,7 +85,7 @@ void MinimalTopStrip::setupControl(juce::Component& control, juce::Label& label,
     addAndMakeVisible(control);
     
     label.setText(text, juce::dontSendNotification);
-    label.setFont(juce::Font(10.0f, juce::Font::plain));
+    label.setFont(juce::FontOptions().withPointHeight(10.0f));
     label.setColour(juce::Label::textColourId, juce::Colour(0xffcccccc));
     label.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(label);

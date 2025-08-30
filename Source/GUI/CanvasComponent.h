@@ -37,6 +37,9 @@ public:
     void mouseMove(const juce::MouseEvent& e) override;
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
     
+    // Keyboard interaction
+    bool keyPressed(const juce::KeyPress& key) override;
+    
     // Drag & drop for sample loading
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
     void fileDragEnter(const juce::StringArray& files, int x, int y) override;
@@ -116,6 +119,7 @@ private:
     float calculateMedianLatency() const;
     float calculateP95Latency() const;
     void createAndSendMaskColumn(juce::Point<float> mousePos);
+    void pushMaskFromScreenY(float screenY) noexcept;
     
     // Phase 4 experiment: improved Y-to-bin mapping
 #ifdef PHASE4_EXPERIMENT

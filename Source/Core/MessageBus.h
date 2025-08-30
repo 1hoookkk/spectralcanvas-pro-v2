@@ -110,6 +110,8 @@ struct SpectralFrame
     alignas(32) float phase[NUM_BINS];        // Spectral phases
     
     uint32_t sequenceNumber;                  // Monotonic frame counter
+    uint32_t version;                         // Message schema version for compatibility
+    uint64_t engineFrameId;                   // Engine timeline reference
     double timestampSamples;                  // Sample-accurate timestamp
     float fundamentalFreq;                    // Detected fundamental (0 if none)
     float spectralCentroid;                   // Brightness measure
@@ -119,6 +121,8 @@ struct SpectralFrame
         std::memset(magnitude, 0, sizeof(magnitude));
         std::memset(phase, 0, sizeof(phase));
         sequenceNumber = 0;
+        version = 1;
+        engineFrameId = 0;
         timestampSamples = 0.0;
         fundamentalFreq = 0.0f;
         spectralCentroid = 0.0f;
@@ -135,12 +139,17 @@ struct ParameterUpdate
     uint32_t parameterId;                     // Parameter identifier
     float normalizedValue;                    // 0.0 to 1.0 range
     uint32_t sampleOffset;                    // Buffer-relative timing for sample accuracy
+    uint32_t version;                         // Message schema version for compatibility
+    uint64_t engineFrameId;                   // Engine timeline reference (0 = apply immediately)
+    uint64_t uiTimestampMicros;              // UI timestamp for latency tracking
     
     ParameterUpdate() noexcept 
-        : parameterId(0), normalizedValue(0.0f), sampleOffset(0) {}
+        : parameterId(0), normalizedValue(0.0f), sampleOffset(0), 
+          version(1), engineFrameId(0), uiTimestampMicros(0) {}
     
     ParameterUpdate(uint32_t id, float value, uint32_t offset = 0) noexcept
-        : parameterId(id), normalizedValue(value), sampleOffset(offset) {}
+        : parameterId(id), normalizedValue(value), sampleOffset(offset),
+          version(1), engineFrameId(0), uiTimestampMicros(0) {}
 };
 
 // MaskColumn for GPU → Audio Thread communication
@@ -159,6 +168,8 @@ struct MaskColumn
     double timestampSamples;                 // Sample-accurate timing
     uint64_t uiTimestampMicros;              // High-res UI timestamp for latency tracking
     uint32_t sequenceNumber;                 // For drop detection and debugging
+    uint32_t version;                        // Message schema version for compatibility
+    uint64_t engineFrameId;                  // Engine timeline reference
     
     MaskColumn() noexcept
     {
@@ -168,6 +179,8 @@ struct MaskColumn
         timestampSamples = 0.0;
         uiTimestampMicros = 0;
         sequenceNumber = 0;
+        version = 1;
+        engineFrameId = 0;
         
         // Initialize to 1.0 (no masking by default)
         for (size_t i = 0; i < MAX_BINS; ++i)
@@ -190,7 +203,7 @@ static_assert(offsetof(MaskColumn, values) == 0, "values array must be at offset
 // Type aliases for specific queue configurations
 using SpectralDataQueue = SpscRing<SpectralFrame, 16>;      // Audio → UI
 using ParameterQueue = SpscRing<ParameterUpdate, 64>;       // UI → Audio  
-using MaskColumnQueue = SpscRing<MaskColumn, 8>;            // GPU → Audio
+using MaskColumnQueue = SpscRing<MaskColumn, 64>;           // GPU → Audio
 
 // RT-safe assertions for debug builds
 #ifdef JUCE_DEBUG

@@ -93,22 +93,21 @@ void SpectralEngine::processBlock(const float* inputBuffer, float* outputBuffer,
     while (samplesRemaining > 0)
     {
         const int currentHop = samplesUntilNextFrame_.load(std::memory_order_relaxed);
-        const int clampedHop = std::max(0, currentHop);  // FIX: Prevent negative hop
-        const int samplesToProcess = std::min(samplesRemaining, clampedHop);
+        const int samplesToProcess = std::min(samplesRemaining, currentHop);
         
         // Read output samples from circular buffer
-        if (samplesToProcess > 0)
-        {
-            outputBuffer_.readBlock(outputBuffer + outputIndex, samplesToProcess);
-            samplesRemaining -= samplesToProcess;
-            outputIndex += samplesToProcess;
-            samplesUntilNextFrame_.store(currentHop - samplesToProcess, std::memory_order_relaxed);
-        }
+        outputBuffer_.readBlock(outputBuffer + outputIndex, samplesToProcess);
+        
+        samplesRemaining -= samplesToProcess;
+        outputIndex += samplesToProcess;
+        
+        const int newHop = currentHop - samplesToProcess;
+        samplesUntilNextFrame_.store(newHop, std::memory_order_relaxed);
         
         // Process new frame when hop is complete
-        if (samplesUntilNextFrame_.load(std::memory_order_relaxed) <= 0)
+        if (newHop <= 0)
         {
-            if (inputBuffer_.getAvailableForReading() >= HOP_SIZE)  // FIX: Check for HOP_SIZE, not FFT_SIZE
+            if (inputBuffer_.getAvailableForReading() >= FFT_SIZE)
             {
                 performSTFT();
                 applySpectralProcessing();
@@ -123,8 +122,7 @@ void SpectralEngine::processBlock(const float* inputBuffer, float* outputBuffer,
             }
             else
             {
-                // Avoid negative hop in next iteration
-                samplesUntilNextFrame_.store(0, std::memory_order_relaxed);
+                // Not enough input data yet
                 break;
             }
         }
@@ -133,13 +131,8 @@ void SpectralEngine::processBlock(const float* inputBuffer, float* outputBuffer,
 
 void SpectralEngine::performSTFT() noexcept
 {
-    // FIX: Maintain overlapping frame - shift left by HOP_SIZE
-    std::memmove(fftBuffer_.get().data(),
-                 fftBuffer_.get().data() + HOP_SIZE,
-                 (FFT_SIZE - HOP_SIZE) * sizeof(float));
-    
-    // Append HOP_SIZE fresh samples from input ring
-    inputBuffer_.readBlock(fftBuffer_.get().data() + (FFT_SIZE - HOP_SIZE), HOP_SIZE);
+    // Read windowed frame from input buffer
+    inputBuffer_.readBlock(fftBuffer_.get().data(), FFT_SIZE);
     
     // Copy to windowed buffer and apply window
     std::memcpy(windowedBuffer_.get().data(), fftBuffer_.get().data(), FFT_SIZE * sizeof(float));
@@ -148,28 +141,17 @@ void SpectralEngine::performSTFT() noexcept
     // Perform forward FFT (in-place)
     forwardFFT_->performRealOnlyForwardTransform(windowedBuffer_.get().data(), true);
     
-    // FIX: Extract magnitude and phase with correct JUCE real-only FFT packing
+    // Extract magnitude and phase
     for (size_t bin = 0; bin < NUM_BINS; ++bin)
     {
-        float real = 0.0f, imag = 0.0f;
-
-        if (bin == 0)                   // DC component
-        {
-            real = windowedBuffer_.get()[0];
-            imag = 0.0f;
-        }
-        else if (bin == NUM_BINS - 1)   // Nyquist component
-        {
-            real = windowedBuffer_.get()[1];
-            imag = 0.0f;
-        }
-        else                            // Regular bins
-        {
-            const size_t idx = bin * 2;
-            real = windowedBuffer_.get()[idx];
-            imag = windowedBuffer_.get()[idx + 1];
-        }
-
+        const size_t realIndex = bin * 2;
+        const size_t imagIndex = bin * 2 + 1;
+        
+        const float real = (bin == 0 || bin == NUM_BINS - 1) ? 
+                          windowedBuffer_.get()[bin] : windowedBuffer_.get()[realIndex];
+        const float imag = (bin == 0 || bin == NUM_BINS - 1) ? 
+                          0.0f : windowedBuffer_.get()[imagIndex];
+        
         currentMagnitude_.get()[bin] = std::sqrt(real * real + imag * imag);
         currentPhase_.get()[bin] = std::atan2(imag, real);
     }
@@ -230,90 +212,45 @@ void SpectralEngine::applySpectralProcessing() noexcept
         }
     }
     
-    // NEW: Generative synthesis path for paint-to-audio
+    // Apply spectral mask from paint gestures
     const float* mask = currentMask_.load(std::memory_order_acquire);
-    
-    // Compute input energy to detect silence
-    float inputEnergy = 0.0f;
-    for (size_t bin = 0; bin < NUM_BINS; ++bin)
-        inputEnergy += currentMagnitude_.get()[bin] * currentMagnitude_.get()[bin];
-    
     if (mask != nullptr)
     {
-        float maskSum = 0.0f;
+        const float maskFloor = 0.02f; // Minimum attenuation to avoid complete silence
+        
         for (size_t bin = 0; bin < NUM_BINS; ++bin)
-            maskSum += mask[bin];
-
-        const bool inputSilent = (inputEnergy < 1e-10f);
-        const float mix = std::clamp(spectralMix_.load(std::memory_order_relaxed), 0.0f, 1.0f);
-
-        // Thread-local phase accumulator for coherent synthesis
-        static thread_local std::array<float, NUM_BINS> phaseAcc = { {} };
-
-        if (inputSilent && maskSum > 0.0f)
         {
-            // Synthesize magnitudes from mask with phase continuity
-            const float excitation = 0.02f; // Base level for audibility
-            for (size_t bin = 1; bin < NUM_BINS - 1; ++bin)
-            {
-                const float targetMag = excitation * mask[bin];
-                // Crossfade with existing spectrum (should be ~0 when silent)
-                currentMagnitude_.get()[bin] = (1.0f - mix) * currentMagnitude_.get()[bin] + mix * targetMag;
-
-                // Bin-centered phase increment for coherent partials
-                phaseAcc[bin] += 2.0f * float(M_PI) * float(HOP_SIZE) * float(bin) / float(FFT_SIZE);
-                if (phaseAcc[bin] > float(M_PI))  phaseAcc[bin] -= 2.0f * float(M_PI);
-                if (phaseAcc[bin] < -float(M_PI)) phaseAcc[bin] += 2.0f * float(M_PI);
-                currentPhase_.get()[bin] = phaseAcc[bin];
-            }
-        }
-        else
-        {
-            // Gate/shape existing spectrum by mask (with small floor)
-            const float maskFloor = 0.02f;
-            for (size_t bin = 0; bin < NUM_BINS; ++bin)
-            {
-                const float scale = maskFloor + (1.0f - maskFloor) * mask[bin];
-                currentMagnitude_.get()[bin] *= scale;
-            }
+            const float maskValue = mask[bin];
+            const float scale = maskFloor + (1.0f - maskFloor) * maskValue;
+            currentMagnitude_.get()[bin] *= scale;
         }
     }
 }
 
 void SpectralEngine::performiFFT() noexcept
 {
-    // FIX: Reconstruct complex spectrum with correct JUCE real-only FFT packing
+    // Reconstruct complex spectrum from magnitude and phase
     for (size_t bin = 0; bin < NUM_BINS; ++bin)
     {
         const float magnitude = currentMagnitude_.get()[bin];
         const float phase = currentPhase_.get()[bin];
         
-        const float real = magnitude * std::cos(phase);
-        const float imag = magnitude * std::sin(phase);
-
-        if (bin == 0)                   // DC component
+        const size_t realIndex = bin * 2;
+        const size_t imagIndex = bin * 2 + 1;
+        
+        if (bin == 0 || bin == NUM_BINS - 1)
         {
-            ifftBuffer_.get()[0] = real;
+            ifftBuffer_.get()[bin] = magnitude * std::cos(phase);
         }
-        else if (bin == NUM_BINS - 1)   // Nyquist component
+        else
         {
-            ifftBuffer_.get()[1] = real;
-        }
-        else                            // Regular bins
-        {
-            const size_t idx = bin * 2;
-            ifftBuffer_.get()[idx]     = real;
-            ifftBuffer_.get()[idx + 1] = imag;
+            ifftBuffer_.get()[realIndex] = magnitude * std::cos(phase);
+            ifftBuffer_.get()[imagIndex] = magnitude * std::sin(phase);
         }
     }
     
     // Perform inverse FFT
     inverseFFT_->performRealOnlyInverseTransform(ifftBuffer_.get().data());
-    
-    // FIX: Add normalization to prevent amplitude buildup
-    const float invN = 1.0f / static_cast<float>(FFT_SIZE);
-    for (size_t i = 0; i < FFT_SIZE; ++i)
-        ifftBuffer_.get()[i] *= invN;
     
     // Apply window and overlap-add
     hannWindow_.apply(ifftBuffer_.get().data());
@@ -433,7 +370,7 @@ void SpectralEngine::applyMaskColumn(const MaskColumn& maskColumn) noexcept
         // Clamp mask to reasonable range (0.1x to 10x)
         const float clampedMask = std::clamp(maskValue, 0.1f, 10.0f);
         
-        // Apply mask scaling to magnitude with boost for audibility
-        magnitude[bin] *= clampedMask * 2.0f;
+        // Apply mask scaling to magnitude
+        magnitude[bin] *= clampedMask;
     }
 }

@@ -119,7 +119,7 @@ void CanvasComponent::paint(juce::Graphics& g)
         g.fillRoundedRectangle(panel.toFloat(), 6.0f);
         
         // Font and line spacing
-        g.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), 14.0f, juce::Font::plain));
+        g.setFont(juce::FontOptions().withPointHeight(14.0f));
         int x = panel.getX() + 10;
         int y = panel.getY() + 10;
         const int lh = 18; // line height
@@ -448,11 +448,21 @@ inline int CanvasComponent::uiToBinLinear(float yNorm, int numBins) noexcept
 
 inline int CanvasComponent::uiToBinLog(float yNorm, double sampleRate, int fftSize) noexcept
 {
-    // Future: Log-frequency mapping for musical scales
-    // For now, fallback to linear
-    juce::ignoreUnused(sampleRate); // avoid MSVC C4100 warning
-    const int numBins = fftSize / 2 + 1;
-    return uiToBinLinear(yNorm, numBins);
+    // Log-frequency mapping for musical scales (80Hz to 8kHz)
+    constexpr float fMin = 80.0f;     // Low end of musical range
+    constexpr float fMax = 8000.0f;   // High end before harsh frequencies
+    const float nyquist = static_cast<float>(sampleRate * 0.5);
+    
+    // Clamp and invert Y (top = high frequency)
+    const float y = std::clamp(1.0f - yNorm, 0.0f, 1.0f);
+    
+    // Exponential frequency mapping
+    const float freq = fMin * std::pow(fMax / fMin, y);
+    
+    // Convert frequency to bin index
+    const int bin = static_cast<int>(std::round((freq / nyquist) * (fftSize / 2)));
+    
+    return std::clamp(bin, 0, fftSize / 2);
 }
 
 void CanvasComponent::createAndSendMaskColumnPhase4(juce::Point<float> mousePos)
