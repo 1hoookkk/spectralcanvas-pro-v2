@@ -44,6 +44,17 @@ void SpectralCanvasProAudioProcessor::prepareToPlay(double sampleRate, int sampl
     // Connect SampleLoader to SpectralEngine (RT-safe pointer sharing)
     spectralEngine->setSampleLoader(&sampleLoader);
     
+    // Initialize modern JUCE DSP-based spectral painting processor
+    spectralPaintProcessor = std::make_unique<SpectralPaintProcessor>();
+    
+    // Prepare with JUCE DSP spec
+    juce::dsp::ProcessSpec spec;
+    spec.sampleRate = sampleRate;
+    spec.maximumBlockSize = static_cast<uint32_t>(samplesPerBlock);
+    spec.numChannels = static_cast<uint32_t>(std::max(getTotalNumInputChannels(), getTotalNumOutputChannels()));
+    
+    spectralPaintProcessor->prepare(spec);
+    
     // Initialize Phase 2-3 validation infrastructure  
     processedSampleCount_.store(0, std::memory_order_relaxed);
     // Store epoch in nanoseconds for unified timebase (per spec)
@@ -94,6 +105,9 @@ void SpectralCanvasProAudioProcessor::releaseResources()
     if (spectralEngine)
         spectralEngine->reset();
         
+    if (spectralPaintProcessor)
+        spectralPaintProcessor->reset();
+        
     sampleLoader.shutdown();
     maskTestFeeder.reset();
 }
@@ -120,6 +134,12 @@ void SpectralCanvasProAudioProcessor::rtResetTestFeeder_() noexcept
 {
     // Reset test feeder state if needed
     // Static phase will be reset naturally due to scope
+}
+
+void SpectralCanvasProAudioProcessor::rtResetModernPaint_() noexcept
+{
+    if (spectralPaintProcessor)
+        spectralPaintProcessor->reset();
 }
 
 int SpectralCanvasProAudioProcessor::getActiveBinCount() const noexcept
@@ -149,6 +169,7 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
 #ifdef PHASE4_EXPERIMENT
         if (path == AudioPath::Phase4Synth)   rtResetPhase4_();
         else if (path == AudioPath::TestFeeder) rtResetTestFeeder_();
+        else if (path == AudioPath::ModernPaint) rtResetModernPaint_();
 #endif
         lastPath_ = path;
     }
@@ -262,6 +283,27 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
             if (rms > 1.0e-6f)
                 wroteAudioFlag_.store(true, std::memory_order_relaxed);
 #endif
+            return;
+        }
+        
+        case AudioPath::ModernPaint:
+        {
+            // Modern JUCE DSP-based spectral painting
+            if (spectralPaintProcessor && spectralPaintProcessor->isInitialized())
+            {
+                // Create JUCE DSP context for processing
+                juce::dsp::AudioBlock<float> audioBlock(buffer);
+                juce::dsp::ProcessContextReplacing<float> context(audioBlock);
+                
+                // Process through spectral paint node
+                spectralPaintProcessor->processBlock(context);
+                
+                // Check if audio was generated
+                const float rms = buffer.getNumChannels() > 0
+                    ? buffer.getRMSLevel(0, 0, numSamples) : 0.0f;
+                if (rms > 1.0e-6f)
+                    wroteAudioFlag_.store(true, std::memory_order_relaxed);
+            }
             return;
         }
     }
@@ -487,6 +529,23 @@ SpectralCanvasProAudioProcessor::PerformanceMetrics SpectralCanvasProAudioProces
     metrics.xrunCount = 0;
     
     return metrics;
+}
+
+bool SpectralCanvasProAudioProcessor::pushPaintEvent(float y, float intensity, uint32_t timestampMs) noexcept
+{
+    if (!spectralPaintProcessor)
+        return false;
+        
+    // Generate timestamp if not provided
+    if (timestampMs == 0)
+    {
+        auto now = std::chrono::steady_clock::now();
+        auto duration = now.time_since_epoch();
+        timestampMs = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(duration).count());
+    }
+    
+    // Forward to spectral paint processor
+    return spectralPaintProcessor->pushPaintEvent(y, intensity, timestampMs);
 }
 
 // Plugin factory functions

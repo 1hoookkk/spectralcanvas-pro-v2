@@ -175,8 +175,15 @@ void CanvasComponent::mouseDown(const juce::MouseEvent& e)
         audioProcessor.generateImmediateAudioFeedback();
     }
 
-    // Direct RT-safe paint-to-sound (replaces complex accumulator logic)
-    pushMaskFromScreenY(e.position.y);
+    // Convert screen coordinates to normalized [0,1] range
+    float yNormalized = e.position.y / static_cast<float>(getHeight());
+    yNormalized = juce::jlimit(0.0f, 1.0f, yNormalized);
+    
+    // Use current brush strength as intensity
+    float intensity = juce::jlimit(0.0f, 1.0f, currentBrushStrength);
+    
+    // Direct RT-safe paint-to-sound using unified interface
+    pushPaintEvent(yNormalized, intensity);
 
     // Start paint stroke for visual feedback
     currentStroke = PaintStroke{};
@@ -205,8 +212,15 @@ void CanvasComponent::mouseDrag(const juce::MouseEvent& e)
     
     lastMousePos = e.position;
     
-    // Direct RT-safe paint-to-sound for continuous painting
-    pushMaskFromScreenY(e.position.y);
+    // Convert screen coordinates to normalized [0,1] range
+    float yNormalized = e.position.y / static_cast<float>(getHeight());
+    yNormalized = juce::jlimit(0.0f, 1.0f, yNormalized);
+    
+    // Use current brush strength as intensity
+    float intensity = juce::jlimit(0.0f, 1.0f, currentBrushStrength);
+    
+    // Direct RT-safe paint-to-sound for continuous painting using unified interface
+    pushPaintEvent(yNormalized, intensity);
     
     // Add point to stroke
     PaintStroke::Point point;
@@ -651,3 +665,25 @@ bool CanvasComponent::keyPressed(const juce::KeyPress& key)
     return Component::keyPressed(key);
 }
 #endif
+
+void CanvasComponent::pushPaintEvent(float y, float intensity)
+{
+    // Clamp inputs to valid range
+    y = juce::jlimit(0.0f, 1.0f, y);
+    intensity = juce::jlimit(0.0f, 1.0f, intensity);
+    
+    // Choose paint method based on current audio path
+    auto currentPath = audioProcessor.getCurrentPath();
+    
+    if (currentPath == SpectralCanvasProAudioProcessor::AudioPath::ModernPaint)
+    {
+        // Use lightweight 12-byte paint events for modern JUCE DSP path
+        audioProcessor.pushPaintEvent(y, intensity);
+    }
+    else if (currentPath == SpectralCanvasProAudioProcessor::AudioPath::Phase4Synth)
+    {
+        // Use legacy MaskColumn system for backward compatibility
+        pushMaskFromScreenY(y);
+    }
+    // Other paths (Silent, TestFeeder) don't process paint events
+}

@@ -9,11 +9,25 @@ add_executable(RTSafetyTest
     AllocationDetector.cpp
 )
 
+# Test executable: Spectral Paint Node validation
+add_executable(SpectralPaintNodeTest
+    SpectralPaintNodeTest.cpp
+    ../Source/nodes/SpectralPaintNode.cpp
+)
+
 target_compile_features(RTSafetyTest PRIVATE cxx_std_20)
+target_compile_features(SpectralPaintNodeTest PRIVATE cxx_std_20)
 
 target_link_libraries(RTSafetyTest PRIVATE
     juce::juce_audio_utils
     juce::juce_dsp
+)
+
+target_link_libraries(SpectralPaintNodeTest PRIVATE
+    juce::juce_audio_utils
+    juce::juce_dsp
+    gtest
+    gtest_main
 )
 
 # Test executable: ProcessBlock validation  

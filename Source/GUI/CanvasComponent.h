@@ -58,6 +58,9 @@ public:
     void setGridVisible(bool visible);
     void setSnapToScale(bool snap);
     
+    // Modern paint support
+    void pushPaintEvent(float y, float intensity);
+    
 private:
     SpectralCanvasProAudioProcessor& audioProcessor;
     

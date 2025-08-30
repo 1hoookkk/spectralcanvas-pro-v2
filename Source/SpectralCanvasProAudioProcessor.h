@@ -9,6 +9,7 @@
 #include "DSP/SpectralEngine.h"
 #include "DSP/SampleLoader.h"
 #include "DSP/MaskTestFeeder.h"
+#include "SpectralPaintProcessor.h"
 
 #ifdef PHASE4_EXPERIMENT
 #include "DSP/KeyFilter.h"
@@ -24,7 +25,8 @@ public:
     enum class AudioPath : uint8_t {
         Silent = 0,
         TestFeeder,
-        Phase4Synth
+        Phase4Synth,
+        ModernPaint  // New JUCE DSP-based spectral painting
     };
 
     SpectralCanvasProAudioProcessor();
@@ -102,6 +104,9 @@ public:
     // Phase 4 mask column push method (UI thread) with diagnostics and debug tap
     bool pushMaskColumn(const MaskColumn& mask);
     
+    // Modern paint event push method (UI thread) - lightweight 12-byte events
+    bool pushPaintEvent(float y, float intensity, uint32_t timestampMs = 0) noexcept;
+    
     // Debug tap access for overlay
     Phase4DebugTap& getDebugTap() noexcept { return debugTap_; }
     
@@ -146,6 +151,7 @@ private:
     // RT-safe state resets for path transitions
     void rtResetPhase4_() noexcept;
     void rtResetTestFeeder_() noexcept;
+    void rtResetModernPaint_() noexcept;
 #endif
     
     // Inter-thread communication (lock-free)
@@ -165,6 +171,9 @@ private:
     
     // RT-safe test harness for paint-to-audio validation
     MaskTestFeeder maskTestFeeder;
+    
+    // Modern JUCE DSP-based spectral painting processor
+    std::unique_ptr<SpectralPaintProcessor> spectralPaintProcessor;
     
 #ifdef PHASE4_EXPERIMENT
     // Phase 4 experimental oscillator bank and key filter

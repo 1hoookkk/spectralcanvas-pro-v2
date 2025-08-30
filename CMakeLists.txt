@@ -28,6 +28,8 @@ target_sources(SpectralCanvasPro PRIVATE
     Source/SpectralCanvasProAudioProcessor.cpp
     Source/SpectralCanvasProEditor.h
     Source/SpectralCanvasProEditor.cpp
+    Source/SpectralPaintProcessor.h
+    Source/SpectralPaintProcessor.cpp
     
     # Core system
     Source/Core/Params.h
@@ -40,6 +42,14 @@ target_sources(SpectralCanvasPro PRIVATE
     Source/Core/PaintQueue.h
     Source/Core/LatencyTracker.h
     Source/Core/GPUStatus.h
+    
+    # RT Infrastructure
+    Source/rt/MaskColumnLite.h
+    Source/rt/SpscQueueLite.h
+    
+    # Modern DSP Nodes
+    Source/nodes/SpectralPaintNode.h
+    Source/nodes/SpectralPaintNode.cpp
     
     # DSP processing
     Source/DSP/SpectralEngine.h
