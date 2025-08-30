@@ -4,8 +4,6 @@
 SpectralPaintProcessor::SpectralPaintProcessor()
     : spectralNode_(std::make_unique<nodes::SpectralPaintNode>())
 {
-    // Initialize processor chain with our spectral paint node
-    processorChain_.get<0>() = *spectralNode_;
 }
 
 void SpectralPaintProcessor::prepare(const juce::dsp::ProcessSpec& spec)
@@ -13,8 +11,8 @@ void SpectralPaintProcessor::prepare(const juce::dsp::ProcessSpec& spec)
     sampleRate_ = spec.sampleRate;
     maxBlockSize_ = static_cast<int>(spec.maximumBlockSize);
     
-    // Prepare the processor chain
-    processorChain_.prepare(spec);
+    // Prepare the spectral node directly
+    spectralNode_->prepare(spec);
     
     // Mark as initialized
     initialized_.store(true, std::memory_order_release);
@@ -25,7 +23,7 @@ void SpectralPaintProcessor::reset() noexcept
     if (!initialized_.load(std::memory_order_acquire))
         return;
         
-    processorChain_.reset();
+    spectralNode_->reset();
 }
 
 void SpectralPaintProcessor::processBlock(const juce::dsp::ProcessContextReplacing<float>& context) noexcept
@@ -58,8 +56,8 @@ void SpectralPaintProcessor::processBlock(const juce::dsp::ProcessContextReplaci
         return;
     }
     
-    // Process through spectral paint chain
-    processorChain_.process(context);
+    // Process through spectral paint node directly
+    spectralNode_->process(context);
 }
 
 bool SpectralPaintProcessor::pushPaintEvent(float y, float intensity, uint32_t timestampMs) noexcept

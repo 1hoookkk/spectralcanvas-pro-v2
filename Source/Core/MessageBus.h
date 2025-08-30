@@ -8,6 +8,10 @@
 #include <cstddef>  // For offsetof
 #include "RealtimeSafeTypes.h"
 
+#ifdef _MSC_VER
+  #pragma warning(disable: 4324) // 'structure was padded due to alignment specifier'
+#endif
+
 // Phase 4 experiment flag - oscillator bank with key filter
 #define PHASE4_EXPERIMENT 1
 

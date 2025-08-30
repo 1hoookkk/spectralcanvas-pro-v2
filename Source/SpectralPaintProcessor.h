@@ -98,9 +98,6 @@ private:
     /// Core DSP node
     std::unique_ptr<nodes::SpectralPaintNode> spectralNode_;
     
-    /// JUCE DSP chain for integration
-    juce::dsp::ProcessorChain<nodes::SpectralPaintNode> processorChain_;
-    
     /// State management
     std::atomic<bool> initialized_{false};
     std::atomic<bool> bypassed_{false};

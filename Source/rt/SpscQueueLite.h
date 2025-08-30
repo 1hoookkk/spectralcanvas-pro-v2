@@ -5,6 +5,10 @@
 #include <cstdint>
 #include <type_traits>
 
+#ifdef _MSC_VER
+  #pragma warning(disable: 4324) // 'structure was padded due to alignment specifier'
+#endif
+
 /**
  * @file SpscQueueLite.h  
  * @brief Lock-free Single Producer Single Consumer queue for RT use
@@ -21,6 +25,9 @@
  */
 
 namespace rt {
+
+// Forward declaration
+struct MaskColumnLite;
 
 template <typename T, size_t CapacityPow2>
 class SpscQueueLite {
@@ -133,8 +140,8 @@ private:
 };
 
 // Common queue sizes for different use cases
-using MaskQueue64  = SpscQueueLite<class MaskColumnLite, 64>;
-using MaskQueue128 = SpscQueueLite<class MaskColumnLite, 128>;
-using MaskQueue256 = SpscQueueLite<class MaskColumnLite, 256>;
+using MaskQueue64  = SpscQueueLite<MaskColumnLite, 64>;
+using MaskQueue128 = SpscQueueLite<MaskColumnLite, 128>;
+using MaskQueue256 = SpscQueueLite<MaskColumnLite, 256>;
 
 } // namespace rt
