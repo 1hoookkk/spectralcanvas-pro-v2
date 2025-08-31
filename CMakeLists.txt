@@ -76,7 +76,18 @@ target_sources(SpectralCanvasPro PRIVATE
     Source/GUI/MinimalBottomStrip.cpp
     Source/GUI/PerfHUD.h
     Source/GUI/PerfHUD.cpp
+    Source/GUI/SpectrogramComponent.h
+    Source/GUI/SpectrogramComponent.cpp
     Source/GUI/HudFormatter.h
+    
+    # Spectral Pipeline (MVP)
+    Source/Audio/SampleManager.h
+    Source/Audio/SampleManager.cpp
+    Source/DSP/SpectralModel.h
+    Source/DSP/SpectralModel.cpp
+    Source/DSP/SpectralMask.h
+    Source/DSP/SpectralPlayer.h
+    Source/DSP/SpectralPlayer.cpp
     
     # GPU rendering
     Source/Viz/GpuRenderer.h
@@ -127,6 +138,7 @@ endif()
 target_link_libraries(SpectralCanvasPro
     PRIVATE
       juce::juce_audio_utils
+      juce::juce_audio_formats
       juce::juce_dsp
       juce::juce_gui_extra
 )

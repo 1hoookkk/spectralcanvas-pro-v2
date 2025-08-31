@@ -128,6 +128,17 @@ void SpectralCanvasProAudioProcessor::prepareToPlay(double sampleRate, int sampl
     auto now = steady_clock::now();
     rtTimestampUs_.store(static_cast<uint64_t>(duration_cast<microseconds>(now.time_since_epoch()).count()), std::memory_order_relaxed);
 #endif
+    
+    // Initialize spectral pipeline if model is ready
+    if (spectralModel.isReady())
+    {
+        spectralPlayer.prepare (sampleRate, samplesPerBlock, &spectralModel, &spectralMask);
+        spectralReady = true;
+    }
+    else
+    {
+        spectralReady = false;
+    }
 }
 
 void SpectralCanvasProAudioProcessor::releaseResources()
@@ -218,6 +229,14 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
         lastPath_ = path;
     }
 
+    // Check if spectral pipeline should handle audio
+    if (spectralReady && spectralModel.isReady())
+    {
+        spectralPlayer.process(buffer);
+        wroteAudioFlag_.store(true, std::memory_order_relaxed);
+        return;
+    }
+    
     // Initialize write detection for this block
     wroteAudioFlag_.store(false, std::memory_order_relaxed);
     
@@ -526,8 +545,16 @@ void SpectralCanvasProAudioProcessor::setStateInformation(const void* data, int 
 
 bool SpectralCanvasProAudioProcessor::loadSampleFile(const juce::File& audioFile)
 {
-    // This is called from UI thread - safe to allocate
-    return sampleLoader.loadSampleFile(audioFile);
+    // Load using new spectral pipeline
+    if (! sampleManager.loadFromFile (audioFile, getSampleRate())) return false;
+    spectralModel.build (sampleManager.get().audio, /*fftOrder*/ 10, /*hop*/ 256);
+    spectralMask.init (spectralModel.numFrames(), spectralModel.numBins());
+    if (currentSampleRate > 0 && currentBlockSize > 0) {
+        spectralPlayer.prepare (getSampleRate(), getBlockSize(), &spectralModel, &spectralMask);
+        spectralPlayer.reset();
+    }
+    spectralReady = spectralModel.isReady();
+    return spectralReady;
 }
 
 void SpectralCanvasProAudioProcessor::generateImmediateAudioFeedback()
@@ -647,7 +674,6 @@ bool SpectralCanvasProAudioProcessor::pushPaintEvent(float y, float intensity, u
     return spectralPaintProcessor->pushPaintEvent(y, intensity, timestampMs);
 }
 
-// Plugin factory functions
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new SpectralCanvasProAudioProcessor();

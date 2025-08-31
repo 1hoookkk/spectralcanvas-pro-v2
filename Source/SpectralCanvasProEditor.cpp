@@ -27,6 +27,11 @@ SpectralCanvasProEditor::SpectralCanvasProEditor(SpectralCanvasProAudioProcessor
         perfHUD->setVisible(*hudParam >= 0.5f);
     }
     
+    // Add spectral painting components
+    addAndMakeVisible(loadButton);
+    loadButton.onClick = [this]{ loadSampleButtonClicked(); };
+    addAndMakeVisible(spectrogram);
+    
     // Enable keyboard focus for 'H' key toggle
     setWantsKeyboardFocus(true);
     
@@ -58,15 +63,25 @@ void SpectralCanvasProEditor::resized()
     
     // Top strip gets fixed height (40px minimal)
     auto topArea = bounds.removeFromTop(40);
-    topStrip->setBounds(topArea);
+    topStrip->setBounds(topArea.removeFromLeft(topArea.getWidth() / 2));
+    loadButton.setBounds(topArea.removeFromLeft(140).reduced(2));
     
-    // Canvas gets all remaining area
-    canvasComponent->setBounds(bounds);
+    // Split remaining area between canvas and spectrogram
+    auto leftArea = bounds.removeFromLeft(bounds.getWidth() / 2);
+    canvasComponent->setBounds(leftArea);
+    spectrogram.setBounds(bounds);
     
     // Position HUD in top-right corner with margin
     if (perfHUD) {
         const int margin = 10;
-        perfHUD->setTopRightPosition(getWidth() - margin, topArea.getHeight() + margin);
+        perfHUD->setTopRightPosition(getWidth() - margin, 50);
+    }
+    
+    // Hook model/mask if available
+    if (audioProcessor.getSpectralModel().isReady())
+    {
+        spectrogram.setModel(&audioProcessor.getSpectralModel());
+        spectrogram.setEditableMask(&audioProcessor.getSpectralMask());
     }
 }
 
@@ -103,4 +118,33 @@ void SpectralCanvasProEditor::parameterChanged(const juce::String& parameterID, 
             }
         });
     }
+}
+
+void SpectralCanvasProEditor::loadSampleButtonClicked()
+{
+    juce::FileChooser fc ("Choose an audio file...", {}, "*.wav;*.aif;*.aiff;*.flac;*.mp3");
+    fc.launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+        [this] (const juce::FileChooser& chooser)
+        {
+            auto result = chooser.getResult();
+            if (result.existsAsFile()) 
+            {
+                if (audioProcessor.loadSampleFile (result))
+                {
+                    // Successfully loaded - switch to spectral path and show spectrogram
+                    spectrogram.setModel(&audioProcessor.getSpectralModel());
+                    spectrogram.setEditableMask(&audioProcessor.getSpectralMask());
+                    spectrogram.repaint();
+                }
+                else
+                {
+                    // Failed to load - show error
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::WarningIcon,
+                        "Load Error",
+                        "Could not load audio file: " + result.getFileName() + 
+                        "\nSupported formats: WAV, AIFF, FLAC, MP3");
+                }
+            }
+        });
 }

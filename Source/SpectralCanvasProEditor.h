@@ -5,6 +5,7 @@
 #include "GUI/CanvasComponent.h"
 #include "GUI/MinimalTopStrip.h"
 #include "GUI/PerfHUD.h"
+#include "GUI/SpectrogramComponent.h"
 
 /**
  * Phase 2-3 Minimal UI Editor
@@ -28,6 +29,9 @@ public:
     
     // Parameter listener for HUD toggle
     void parameterChanged(const juce::String& parameterID, float newValue) override;
+    
+    // Sample loading callback
+    void loadSampleButtonClicked();
 
 private:
     SpectralCanvasProAudioProcessor& audioProcessor;
@@ -38,6 +42,10 @@ private:
     
     // Phase 5 Performance HUD
     std::unique_ptr<PerfHUD> perfHUD;
+    
+    // Spectral painting components
+    juce::TextButton loadButton { "Load Sample" };
+    SpectrogramComponent spectrogram;
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectralCanvasProEditor)
 };

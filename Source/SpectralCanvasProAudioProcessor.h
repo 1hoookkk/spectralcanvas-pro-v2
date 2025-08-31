@@ -2,6 +2,11 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_dsp/juce_dsp.h>
+// New spectral pipeline headers
+#include "Audio/SampleManager.h"
+#include "DSP/SpectralModel.h"
+#include "DSP/SpectralMask.h"
+#include "DSP/SpectralPlayer.h"
 #include "Core/Params.h"
 #include "Core/MessageBus.h"
 #include "Core/LatencyTracker.h"
@@ -65,8 +70,7 @@ public:
     ParameterQueue& getParameterQueue() { return parameterQueue; }
     MaskColumnQueue& getMaskColumnQueue() { return maskColumnQueue; }
     
-    // Sample loading (UI thread access)
-    bool loadSampleFile(const juce::File& audioFile);
+    // Sample loading (UI thread access) - using existing SampleLoader
     SampleLoader& getSampleLoader() { return sampleLoader; }
     
     // Test feedback system (UI thread access)
@@ -118,6 +122,13 @@ public:
     
     // Modern paint event push method (UI thread) - lightweight 12-byte events
     bool pushPaintEvent(float y, float intensity, uint32_t timestampMs = 0) noexcept;
+    
+    // Sample loading API (called from Editor)
+    bool loadSampleFile (const juce::File& f);
+    
+    // Spectral pipeline access for editor
+    SpectralModel& getSpectralModel() { return spectralModel; }
+    SpectralMask& getSpectralMask() { return spectralMask; }
     
     // Debug tap access for overlay
     Phase4DebugTap& getDebugTap() noexcept { return debugTap_; }
@@ -242,6 +253,13 @@ private:
     
     // Debug tap for SPSC integrity diagnosis
     Phase4DebugTap debugTap_;
+    
+    // ===== Spectral pipeline (MVP) =====
+    SampleManager  sampleManager;
+    SpectralModel  spectralModel;
+    SpectralMask   spectralMask;
+    SpectralPlayer spectralPlayer;
+    bool           spectralReady { false };
     
     // RT-safe parameter smoothers for fast-changing controls
     juce::SmoothedValue<float> oscGainSmoother_;
