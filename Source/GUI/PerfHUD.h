@@ -79,7 +79,11 @@ private:
     
     // UI layout constants
     static constexpr int HUD_WIDTH = 180;
+#ifdef JUCE_DEBUG
+    static constexpr int HUD_HEIGHT = 120;  // Extra room for debug metrics
+#else
     static constexpr int HUD_HEIGHT = 100;
+#endif
     static constexpr int MARGIN = 8;
     static constexpr int LINE_HEIGHT = 14;
     static constexpr float BACKGROUND_ALPHA = 0.85f;
@@ -89,6 +93,17 @@ private:
     
     // Font for monospace display
     juce::Font monoFont_;
+    
+#ifdef JUCE_DEBUG
+    // Debug-only perf tracking members
+    double lastUpdateMs_ = 0.0;
+    uint64_t prevBlocks_ = 0;
+    uint64_t prevSamples_ = 0;
+    double callbackRateHz_ = 0.0;
+    double throughputKSps_ = 0.0;
+    double sampleRateUI_ = 0.0;
+    int lastBlockSizeUI_ = 0;
+#endif
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PerfHUD)
 };

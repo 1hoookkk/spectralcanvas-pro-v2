@@ -41,6 +41,17 @@ PerfHUD::PerfHUD(SpectralCanvasProAudioProcessor& processor)
     
     // Initial metrics sample
     lastMetrics_ = sampleMetrics();
+    
+#ifdef JUCE_DEBUG
+    // Initialize debug tracking
+    lastUpdateMs_ = 0.0;
+    prevBlocks_ = 0;
+    prevSamples_ = 0;
+    callbackRateHz_ = 0.0;
+    throughputKSps_ = 0.0;
+    sampleRateUI_ = 0.0;
+    lastBlockSizeUI_ = 0;
+#endif
 }
 
 PerfHUD::~PerfHUD()
@@ -102,6 +113,31 @@ void PerfHUD::timerCallback()
     // Sample current metrics (atomic reads only)
     lastMetrics_ = sampleMetrics();
     
+#ifdef JUCE_DEBUG
+    // Pull counters (non-RT)
+    uint64_t totalBlocks = 0, totalSamples = 0;
+    int lastBlock = 0;
+    double sr = 0.0;
+    audioProcessor_.collectPerfCounters(totalBlocks, totalSamples, lastBlock, sr);
+    
+    const double nowMs = juce::Time::getMillisecondCounterHiRes();
+    const double dtSec = (lastUpdateMs_ > 0.0) ? (nowMs - lastUpdateMs_) * 0.001 : 0.0;
+    
+    if (dtSec > 0.0)
+    {
+        const uint64_t dBlocks = totalBlocks - prevBlocks_;
+        const uint64_t dSamples = totalSamples - prevSamples_;
+        callbackRateHz_ = static_cast<double>(dBlocks) / dtSec;
+        throughputKSps_ = static_cast<double>(dSamples) / dtSec / 1000.0;
+        lastBlockSizeUI_ = lastBlock;
+        sampleRateUI_ = sr;
+    }
+    
+    prevBlocks_ = totalBlocks;
+    prevSamples_ = totalSamples;
+    lastUpdateMs_ = nowMs;
+#endif
+    
     // Trigger repaint
     repaint();
 }
@@ -123,9 +159,29 @@ PerfHUD::Metrics PerfHUD::sampleMetrics() noexcept
         metrics.sampleRate = audioProcessor_.getSampleRate();
         metrics.blockSize = audioProcessor_.getBlockSize();
         
-        // TODO: Sample CPU usage from ContinuousVerification when available
-        // For now, estimate from block processing time
-        metrics.cpuPercent = 0.0f; // Placeholder
+        // Estimate CPU usage from processing metrics (Debug builds only)
+#ifdef JUCE_DEBUG
+        // Simple CPU estimate: (processed samples / sample rate) * 100 / elapsed time
+        static auto lastSampleTime = std::chrono::steady_clock::now();
+        auto currentTime = std::chrono::steady_clock::now();
+        auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - lastSampleTime).count();
+        
+        if (elapsedMs > 100) {  // Update every 100ms
+            static uint64_t lastProcessedSamples = 0;
+            uint64_t currentProcessedSamples = perfMetrics.processedSamples;
+            uint64_t samplesDelta = currentProcessedSamples - lastProcessedSamples;
+            
+            if (samplesDelta > 0 && elapsedMs > 0) {
+                float processingRatio = (samplesDelta / metrics.sampleRate) * 1000.0f / static_cast<float>(elapsedMs);
+                metrics.cpuPercent = juce::jlimit(0.0f, 100.0f, processingRatio * 100.0f);
+            }
+            
+            lastProcessedSamples = currentProcessedSamples;
+            lastSampleTime = currentTime;
+        }
+#else
+        metrics.cpuPercent = 0.0f; // No CPU monitoring in release builds
+#endif
         
         // TODO: Sample GPU status from renderer when available
         // For now, use defaults
@@ -147,6 +203,8 @@ PerfHUD::Metrics PerfHUD::sampleMetrics() noexcept
 
 void PerfHUD::renderHUD(juce::Graphics& g, const Metrics& metrics)
 {
+#ifdef JUCE_DEBUG
+    // Only show detailed HUD in Debug builds
     // Semi-transparent dark background
     g.setColour(juce::Colours::black.withAlpha(BACKGROUND_ALPHA));
     g.fillRoundedRectangle(getLocalBounds().toFloat(), 4.0f);
@@ -215,6 +273,26 @@ void PerfHUD::renderHUD(juce::Graphics& g, const Metrics& metrics)
     
     g.drawText("[H]ide", MARGIN, y, getWidth() - 2*MARGIN, LINE_HEIGHT,
                juce::Justification::right);
+    
+    // Add debug performance metrics
+    y += LINE_HEIGHT;
+    g.setColour(juce::Colours::cyan);
+    auto perfText = "CB:" + juce::String(callbackRateHz_, 1) + "Hz T:" + 
+                    juce::String(throughputKSps_, 1) + "kS/s";
+    g.drawText(perfText, MARGIN, y, getWidth() - 2*MARGIN, LINE_HEIGHT,
+               juce::Justification::left);
+#else
+    // Minimal release build display - just show audio config
+    g.setColour(juce::Colours::black.withAlpha(0.5f));
+    g.fillRoundedRectangle(getLocalBounds().toFloat(), 4.0f);
+    
+    g.setColour(juce::Colours::white);
+    g.setFont(monoFont_);
+    
+    auto configText = HudFormatter::formatAudioConfig(metrics.sampleRate, metrics.blockSize);
+    g.drawText(configText, MARGIN, MARGIN, getWidth() - 2*MARGIN, LINE_HEIGHT,
+               juce::Justification::left);
+#endif
 }
 
 uint64_t PerfHUD::getCurrentTimestamp() const noexcept

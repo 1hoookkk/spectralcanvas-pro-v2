@@ -88,6 +88,18 @@ public:
     };
     PerformanceMetrics getPerformanceMetrics() const;
     
+    // Perf HUD helpers (non-RT consumers read these)
+    void collectPerfCounters(uint64_t& outTotalBlocks,
+                             uint64_t& outTotalSamples,
+                             int& outLastBlockSize,
+                             double& outSampleRate) const noexcept
+    {
+        outTotalBlocks   = totalBlocksProcessed_.load(std::memory_order_relaxed);
+        outTotalSamples  = totalSamplesProcessed_.load(std::memory_order_relaxed);
+        outLastBlockSize = lastBlockSize_.load(std::memory_order_relaxed);
+        outSampleRate    = currentSampleRate;
+    }
+    
     // Sequence number generation for mask ordering (UI thread)
     uint32_t getNextMaskSequenceNumber() { return nextMaskSequenceNumber_.fetch_add(1, std::memory_order_relaxed); }
     
@@ -128,6 +140,14 @@ public:
     int getActiveBinCount() const noexcept; // Thread-safe read of active bin count
     int getNumBins() const noexcept; // Thread-safe read of total bin count for diagnostics
     uint64_t getPhase4Blocks() const noexcept { return phase4Blocks_.load(std::memory_order_relaxed); }
+    
+    // Paint→Audio wiring diagnostics (RT-safe reads)
+    uint64_t getPaintsEnqueued() const noexcept { return paintsEnqueued_.load(std::memory_order_relaxed); }
+    uint64_t getMasksApplied() const noexcept { return masksApplied_.load(std::memory_order_relaxed); }
+    uint64_t getLastMaskTimestamp() const noexcept { return lastMaskTimestamp_.load(std::memory_order_relaxed); }
+    
+    // Helper for timestamp (RT-safe)
+    static uint64_t getCurrentTimeUs() noexcept;
 #endif
     
     // AudioProcessorValueTreeState::Listener interface
@@ -190,6 +210,19 @@ private:
     
     // Diagnostic counter to prove Phase4 branch executes
     std::atomic<uint64_t> phase4Blocks_{0};
+    
+    // Paint→Audio wiring diagnostics (RT-safe)
+    std::atomic<uint64_t> paintsEnqueued_{0};
+    std::atomic<uint64_t> masksApplied_{0};
+    std::atomic<uint64_t> lastMaskTimestamp_{0};
+    
+    // Preallocated mask ring for bounded pop (RT-safe, no allocations)
+    static constexpr int MAX_MASKS_PER_BLOCK = 4;
+    MaskColumn maskRing_[MAX_MASKS_PER_BLOCK];
+    int maskRingIdx_ = 0;
+    
+    // Pre-calculated timestamp for RT safety (Phase4 only)
+    std::atomic<uint64_t> rtTimestampUs_{0};
 #endif
     
     // Phase 2-3 validation infrastructure
@@ -209,6 +242,25 @@ private:
     
     // Debug tap for SPSC integrity diagnosis
     Phase4DebugTap debugTap_;
+    
+    // RT-safe parameter smoothers for fast-changing controls
+    juce::SmoothedValue<float> oscGainSmoother_;
+    juce::SmoothedValue<float> brushSizeSmoother_;
+    juce::SmoothedValue<float> brushStrengthSmoother_;
+    double smoothingTimeSec_ = 0.050; // 50ms default
+    
+    // RT-safe perf counters (no clocks on audio thread)
+    std::atomic<uint64_t> totalBlocksProcessed_{0};
+    std::atomic<uint64_t> totalSamplesProcessed_{0};
+    std::atomic<int> lastBlockSize_{0};
+    
+    // Helper to fetch APVTS values safely (call on audio thread)
+    inline float getParamFast(const juce::String& paramId) const noexcept
+    {
+        if (auto* p = apvts.getRawParameterValue(paramId))
+            return p->load();
+        return 0.0f;
+    }
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectralCanvasProAudioProcessor)
 };
