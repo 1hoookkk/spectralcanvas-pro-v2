@@ -11,6 +11,7 @@
 #include "Core/MessageBus.h"
 #include "Core/LatencyTracker.h"
 #include "Core/Phase4DebugTap.h"
+#include "Core/RealtimeMemoryManager.h"
 #include "DSP/SpectralEngine.h"
 #include "DSP/SampleLoader.h"
 #include "DSP/MaskTestFeeder.h"
@@ -190,6 +191,12 @@ private:
     SpectralDataQueue spectralDataQueue;
     ParameterQueue parameterQueue;
     MaskColumnQueue maskColumnQueue;
+    SampleQueue sampleQueue;
+    
+    // Handle-based sample state (audio thread only)
+    std::optional<SampleView> currentSample;
+    uint32_t currentSampleHandle = 0;
+    uint64_t samplePosition = 0;
     
     // Audio processing state
     double currentSampleRate = 44100.0;

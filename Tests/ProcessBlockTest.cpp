@@ -109,7 +109,7 @@ public:
         // Fill with test signal
         for (int ch = 0; ch < numChannels; ++ch) {
             for (int n = 0; n < blockSize; ++n) {
-                float sample = 0.1f * std::sin(2.0 * M_PI * 440.0 * n / sampleRate);
+                auto sample = static_cast<float>(0.1 * std::sin(2.0 * M_PI * 440.0 * n / sampleRate));
                 buffer.setSample(ch, n, sample);
             }
         }

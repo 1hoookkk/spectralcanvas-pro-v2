@@ -13,7 +13,7 @@ public:
     BasicQueueTest() : TestCase("BasicQueue") {}
     
     void run() override {
-        SpscRing<int, 64> queue;
+        SpscRingBuffer<int, 64> queue;
         
         // Test empty queue
         TEST_ASSERT(!queue.hasDataAvailable());
@@ -43,7 +43,7 @@ public:
     QueueCapacityTest() : TestCase("QueueCapacity") {}
     
     void run() override {
-        SpscRing<int, 8> queue;  // Small queue for testing overflow
+        SpscRingBuffer<int, 8> queue;  // Small queue for testing overflow
         
         // Fill queue to capacity
         int itemsPushed = 0;
@@ -89,7 +89,7 @@ public:
     ConcurrentQueueTest() : TestCase("ConcurrentQueue") {}
     
     void run() override {
-        SpscRing<MaskColumn, 256> queue;
+        SpscRingBuffer<MaskColumn, 256> queue;
         
         const int numItems = 10000;
         std::atomic<int> itemsProduced{0};
@@ -138,11 +138,11 @@ public:
                 auto result = queue.pop();
                 if (result.has_value()) {
                     // Verify data integrity
-                    uint32_t expectedFrame = static_cast<uint32_t>(itemsConsumed.load());
+                    auto expectedFrame = static_cast<uint32_t>(itemsConsumed.load());
                     if (result->frameIndex != expectedFrame) {
                         // Some reordering is expected due to concurrent access
                         // Just verify the data is valid
-                        TEST_ASSERT(result->frameIndex < numItems);
+                        TEST_ASSERT(result->frameIndex < static_cast<uint32_t>(numItems));
                     }
                     
                     itemsConsumed.fetch_add(1, std::memory_order_relaxed);
@@ -171,8 +171,6 @@ public:
         // Print statistics
         std::cout << "  Items produced: " << itemsProduced.load() << std::endl;
         std::cout << "  Items consumed: " << itemsConsumed.load() << std::endl;
-        std::cout << "  Total pushes: " << queue.getPushCount() << std::endl;
-        std::cout << "  Total pops: " << queue.getPopCount() << std::endl;
         std::cout << "  Drops: " << queue.getDropCount() << std::endl;
         
         std::cout << "  Concurrent producer/consumer test completed" << std::endl;
@@ -185,7 +183,7 @@ public:
     QueueStressTest() : TestCase("QueueStress") {}
     
     void run() override {
-        SpscRing<SpectralFrame, 1024> queue;
+        SpscRingBuffer<SpectralFrame, 1024> queue;
         
         const int numIterations = 100000;
         
@@ -250,11 +248,9 @@ public:
     QueueDiagnosticsTest() : TestCase("QueueDiagnostics") {}
     
     void run() override {
-        SpscRing<int, 32> queue;
+        SpscRingBuffer<int, 32> queue;
         
         // Test statistics tracking
-        TEST_EXPECT_EQ(0u, queue.getPushCount());
-        TEST_EXPECT_EQ(0u, queue.getPopCount());
         TEST_EXPECT_EQ(0u, queue.getDropCount());
         
         // Add some data
@@ -263,8 +259,7 @@ public:
             TEST_ASSERT(queue.push(i));
         }
         
-        TEST_EXPECT_EQ(numItems, queue.getPushCount());
-        TEST_EXPECT_EQ(0u, queue.getPopCount());
+        TEST_EXPECT_EQ(numItems, static_cast<int>(queue.size()));
         
         // Test queue depth approximation
         size_t depth = queue.getApproxQueueDepth();
@@ -277,13 +272,10 @@ public:
             TEST_EXPECT_EQ(i, result.value());
         }
         
-        TEST_EXPECT_EQ(numItems, queue.getPushCount());
-        TEST_EXPECT_EQ(numItems / 2, queue.getPopCount());
+        TEST_EXPECT_EQ(numItems / 2, static_cast<int>(queue.size()));
         
         // Test clear functionality
         queue.clear();
-        TEST_EXPECT_EQ(0u, queue.getPushCount());
-        TEST_EXPECT_EQ(0u, queue.getPopCount());
         TEST_EXPECT_EQ(0u, queue.getDropCount());
         TEST_EXPECT_EQ(0u, queue.getApproxQueueDepth());
         

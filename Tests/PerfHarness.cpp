@@ -66,7 +66,9 @@ public:
             file << "      \"units\": \"" << baseline.units << "\",\n";
             
             auto time_t = std::chrono::system_clock::to_time_t(baseline.timestamp);
-            file << "      \"timestamp\": \"" << std::put_time(std::gmtime(&time_t), "%Y-%m-%dT%H:%M:%SZ") << "\"\n";
+            struct tm tm_buf;
+            gmtime_s(&tm_buf, &time_t);
+            file << "      \"timestamp\": \"" << std::put_time(&tm_buf, "%Y-%m-%dT%H:%M:%SZ") << "\"\n";
             file << "    }";
         }
         
@@ -150,7 +152,9 @@ public:
         auto time_t = std::chrono::system_clock::to_time_t(now);
         
         file << "{\n";
-        file << "  \"timestamp\": \"" << std::put_time(std::gmtime(&time_t), "%Y-%m-%dT%H:%M:%SZ") << "\",\n";
+        struct tm tm_buf;
+        gmtime_s(&tm_buf, &time_t);
+        file << "  \"timestamp\": \"" << std::put_time(&tm_buf, "%Y-%m-%dT%H:%M:%SZ") << "\",\n";
         file << "  \"metrics\": {\n";
         
         bool first = true;
@@ -280,7 +284,7 @@ public:
         for (int i = 0; i < numOperations; ++i) {
             HiResTimer timer;
             counter.fetch_add(1, std::memory_order_relaxed);
-            counter.load(std::memory_order_relaxed);
+            (void)counter.load(std::memory_order_relaxed);
             double opTimeNs = timer.elapsedUs() * 1000.0;
             
             integerStats.addSample(opTimeNs);
@@ -292,7 +296,7 @@ public:
             
             HiResTimer timer;
             floatValue.store(newValue, std::memory_order_relaxed);
-            floatValue.load(std::memory_order_relaxed);
+            (void)floatValue.load(std::memory_order_relaxed);
             double opTimeNs = timer.elapsedUs() * 1000.0;
             
             floatStats.addSample(opTimeNs);

@@ -66,6 +66,7 @@ void SpectralCanvasProAudioProcessor::prepareToPlay(double sampleRate, int sampl
     spectralDataQueue.clear();
     parameterQueue.clear();
     maskColumnQueue.clear();
+    sampleQueue.clear();
     
     // RT-SAFE: processBlock setup - no logging in RT path
     // Queue diagnostics moved to UI thread for HUD display
@@ -300,7 +301,24 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
             // Increment diagnostic counter to prove this branch executes
             phase4Blocks_.fetch_add(1, std::memory_order_relaxed);
             
-            // 1) Bounded pop from mask queue (RT-safe, no allocations)
+            // 1) Drain sample queue (RT-safe, keep last)
+            SampleMessage sampleMsg;
+            while (sampleQueue.pop(sampleMsg))
+            {
+                if (sampleMsg.isValid())
+                {
+                    auto& memSys = RealtimeMemorySystem::getInstance();
+                    auto view = memSys.samples.lookup(sampleMsg.handle);
+                    if (view)
+                    {
+                        currentSample = *view;
+                        currentSampleHandle = sampleMsg.handle;
+                        samplePosition = 0; // Reset playback
+                    }
+                }
+            }
+            
+            // 2) Bounded pop from mask queue (RT-safe, no allocations)
             int masksPopped = 0;
             while (masksPopped < MAX_MASKS_PER_BLOCK)
             {
@@ -547,14 +565,62 @@ void SpectralCanvasProAudioProcessor::setStateInformation(const void* data, int 
 bool SpectralCanvasProAudioProcessor::loadSampleFile(const juce::File& audioFile)
 {
     // Load using new spectral pipeline
-    if (! sampleManager.loadFromFile (audioFile, getSampleRate())) return false;
-    spectralModel.build (sampleManager.get().audio, /*fftOrder*/ 10, /*hop*/ 256);
-    spectralMask.init (spectralModel.numFrames(), spectralModel.numBins());
+    if (!sampleManager.loadFromFile(audioFile, getSampleRate())) return false;
+    spectralModel.build(sampleManager.get().audio, /*fftOrder*/ 10, /*hop*/ 256);
+    spectralMask.init(spectralModel.numFrames(), spectralModel.numBins());
     if (currentSampleRate > 0 && currentBlockSize > 0) {
-        spectralPlayer.prepare (getSampleRate(), getBlockSize(), &spectralModel, &spectralMask);
+        spectralPlayer.prepare(getSampleRate(), getBlockSize(), &spectralModel, &spectralMask);
         spectralPlayer.reset();
     }
     spectralReady = spectralModel.isReady();
+    
+    // NEW: Also load into RT-safe handle system for direct playback
+    auto& memSys = RealtimeMemorySystem::getInstance();
+    auto handle = memSys.samples.allocate();
+    if (handle)
+    {
+        const auto& sampleData = sampleManager.get();
+        if (sampleData.loaded && sampleData.audio.getNumSamples() > 0)
+        {
+            // Keep audio data alive on UI thread (member variable)
+            static std::vector<std::unique_ptr<float[]>> ownedChannels;
+            static std::vector<const float*> channelPtrs;
+            
+            ownedChannels.clear();
+            channelPtrs.clear();
+            
+            // Copy to UI-owned memory
+            const int numChannels = sampleData.audio.getNumChannels();
+            const int numSamples = sampleData.audio.getNumSamples();
+            
+            for (int ch = 0; ch < numChannels; ++ch)
+            {
+                auto channelData = std::make_unique<float[]>(numSamples);
+                std::copy(sampleData.audio.getReadPointer(ch),
+                         sampleData.audio.getReadPointer(ch) + numSamples,
+                         channelData.get());
+                channelPtrs.push_back(channelData.get());
+                ownedChannels.push_back(std::move(channelData));
+            }
+            
+            SampleView view(channelPtrs.data(), numChannels, numSamples, sampleData.sampleRate);
+            
+            if (memSys.samples.publish(*handle, view))
+            {
+                SampleMessage msg(*handle, juce::Time::getMillisecondCounter() * 1000);
+                sampleQueue.push(msg);
+            }
+            else
+            {
+                memSys.samples.free(*handle);
+            }
+        }
+        else
+        {
+            memSys.samples.free(*handle);
+        }
+    }
+    
     return spectralReady;
 }
 

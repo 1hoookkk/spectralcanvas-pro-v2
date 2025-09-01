@@ -66,7 +66,7 @@ public:
     QueueRTSafetyTest() : TestCase("QueueRTSafety") {}
     
     void run() override {
-        SpscRing<MaskColumn, 64> queue;
+        SpscRingBuffer<MaskColumn, 64> queue;
         
         // Simulate RT thread operations
         std::thread rtThread([&queue]() {

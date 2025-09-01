@@ -42,6 +42,12 @@ target_sources(SpectralCanvasPro PRIVATE
     Source/Core/PaintQueue.h
     Source/Core/LatencyTracker.h
     Source/Core/GPUStatus.h
+    Source/Core/RealtimeMemoryManager.h
+    Source/Core/SampleMessage.h
+    Source/Core/ColorToSpectralMapper.h
+    Source/Core/ColorToSpectralMapper.cpp
+    Source/Core/AtomicOscillator.h
+    Source/Core/AtomicOscillator.cpp
     
     # RT Infrastructure
     Source/rt/MaskColumnLite.h
@@ -62,6 +68,7 @@ target_sources(SpectralCanvasPro PRIVATE
     Source/DSP/KeyFilter.cpp
     Source/DSP/SpectralEngineStub.h
     Source/DSP/SpectralEngineStub.cpp
+    Source/DSP/SpscRingBuffer.h
     
     # GUI components
     Source/GUI/CanvasComponent.h
