@@ -27,6 +27,9 @@ bool D3D11Renderer::initialize(void* nativeWindowHandle, int width, int height)
         return false;
     }
     
+    // Store window handle for device recovery
+    windowHandle_ = hwnd;
+    
     windowWidth_ = width;
     windowHeight_ = height;
     
@@ -110,6 +113,9 @@ void D3D11Renderer::shutdown()
     deviceContext_.Reset();
     device_.Reset();
     
+    // Clear window handle
+    windowHandle_ = nullptr;
+    
     initialized_ = false;
 }
 
@@ -143,6 +149,11 @@ bool D3D11Renderer::createDevice(HWND /*windowHandle*/)
             lastError_ = "D3D11CreateDevice (HW + WARP) failed";
             return false;
         }
+        usingWarpRenderer_ = true;
+    }
+    else
+    {
+        usingWarpRenderer_ = false;
     }
 
     device_ = dev;
@@ -655,8 +666,7 @@ void D3D11Renderer::beginFrame()
     if (gpuStatus_.getDeviceState() == GPUStatus::REMOVED && 
         deviceLostHandler_.shouldAttemptRecovery())
     {
-        HWND hwnd = nullptr; // TODO: Store window handle for recovery
-        tryRecreateDevice(hwnd);
+        tryRecreateDevice();
     }
 #endif
     
@@ -1192,10 +1202,10 @@ bool D3D11Renderer::createDevice(HWND windowHandle, bool forceWarp)
     return device_ && deviceContext_;
 }
 
-bool D3D11Renderer::tryRecreateDevice(HWND windowHandle)
+bool D3D11Renderer::tryRecreateDevice()
 {
 #ifndef DISABLE_GPU_RESILIENCE
-    if (!deviceLostHandler_.shouldAttemptRecovery())
+    if (!deviceLostHandler_.shouldAttemptRecovery() || !windowHandle_)
         return false;
     
     DeviceRecoveryTimer timer;
@@ -1211,11 +1221,11 @@ bool D3D11Renderer::tryRecreateDevice(HWND windowHandle)
     bool device_created = false;
     if (use_warp)
     {
-        device_created = createDevice(windowHandle, true);
+        device_created = createDevice(windowHandle_, true);
     }
     else
     {
-        device_created = createDevice(windowHandle, false);
+        device_created = createDevice(windowHandle_, false);
     }
     
     if (!device_created)

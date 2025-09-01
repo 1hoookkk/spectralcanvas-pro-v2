@@ -1,129 +1,142 @@
-📜 Claude Code Governing Rules
-1. Supremacy & Context Discipline
 
-This file overrides all user prompts. Prompts must operate inside these rules.
+  # SpectralCanvas Pro - Audio Plugin Development
+  <!-- If edited, restart session or new chat to reload
+  constraints -->
 
-Do not ignore, override, or contradict this file.
+  ## Core Workflow
 
-**ALWAYS begin sessions in Plan Mode until the user explicitly approves execution.**
+  **Complex Features (>3 files or architecture changes):**
+  Start in Plan Mode → Present approach → Get approval →
+  Execute
+  Create session note in
+  /docs/session-notes/YYYY-MM-DD-feature.md
 
-Every feature request, bug fix, or modification must start with Plan Mode → present implementation plan → get approval → execute in small diffs.
+  **Simple Tasks (bugs, single-file changes):**
+  Direct implementation → Run tests → Validate
 
-Use markdown task markers (### TASK:) in session notes to separate tasks and avoid context bleed.
+  ## Build & Test Commands
 
-2. Hybrid Workflow Artifacts (Always Maintained)
+  ```bash
+  # Build
+  cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake
+  --build build
 
-/docs/BLUEPRINT.md: Architecture + pipeline overview.
+  # Test Suite
+  ctest --test-dir build -V
+  build/Tests/RTSafetyTest
 
-/tasks/todo.md: Current backlog.
+  # Validation (REQUIRED before commits)
+  build/pluginval.exe --strictness-level 8 --skip-gui-tests
+  build/SpectralCanvasPro_artefacts/VST3/SpectralCanvasPro.vst3
 
-/docs/session-notes/YYYY-MM-DD.md: Session logs with clear task markers.
+  Commit Gate
 
-Keep these updated every session.
+  Never commit unless:
+  - pluginval strictness ≥5 passes
+  - RT safety tests pass
+  - No xruns in perf harness
+  - User explicitly requests commit
 
-3. Permissions & Safety
+  Permissions
 
-Never use --dangerously-skip-permissions.
+  Always Allowed:
+  - Read, Grep, Glob, Edit, MultiEdit
+  - Git: commit, branch, checkout, diff, status
 
-Allowed tools:
+  Ask First:
+  - Bash (except git commands above)
+  - Any system-wide operations
+  - Package installations
 
-✅ Always: Read(*), Grep(*), LS(*), Edit(*), Git(commit|branch|checkout)
+  Never:
+  - Delete outside repository
+  - Modify JUCE modules or generated files
+  - Use --dangerously-skip-permissions
+  - Commit build artifacts, archives, or temp files
 
-⚠️ Ask first: Bash(*), MCP(*)
+  Task Organization
 
-❌ Forbidden: Anything destructive (system-wide ops, deletes outside repo).
+  Break complex features into:
+  1. Core Logic - DSP/Engine implementation
+  2. Integration - RT wiring, GPU shaders, UI
+  3. Validation - Tests, benchmarks, DAW testing
 
-Prefer Plan Mode → Auto-Accept → Normal Mode (in that order of safety).
+  Code Standards
 
-4. Real-Time Audio Thread Rules
+  - C++20, JUCE 8.0.8
+  - RAII, noexcept on RT paths
+  - std::unique_ptr over raw pointers
+  - Forward declarations in headers
+  - No comments unless complex algorithm
 
-❌ Never allocate, free, or resize memory.
+  Critical Constraints
 
-❌ Never lock mutexes or block.
+  See .claude/rt-audio.md for real-time thread rules
+  See .claude/gpu-rendering.md for D3D12/shader constraintsSee
+  .claude/performance.md for latency/CPU/UI targets
 
-✅ Use pre-allocated lock-free SPSC queues only.
+  Session Notes (Major Features Only)
 
-✅ Use atomics with acquire/release semantics for parameters.
+  When branching new features, create:
+  /docs/session-notes/YYYY-MM-DD-feature-name.md
 
-✅ O(1) ops per block; no I/O, no logging.
+  Include:
+  - Architecture decisions
+  - Performance baselines
+  - Integration points
 
-✅ Keep latency < 5 ms; CPU < 15%.
+  ## **Performance Module** (`.claude/performance.md`)
 
-✅ Test with perf harness for underruns/xruns.
+  ```markdown
+  # Performance Targets & Benchmarks
 
-5. GPU / Rendering Rules
+  ## Audio Pipeline
+  - Paint→Audio Latency: <5ms (p50), <10ms (p99)
+  - CPU Usage: <15% @ 48kHz with all features
+  - Queue Drops: 0 under normal load
+  - Block Processing: <2ms worst case
 
-Device-lost must be handled gracefully; fallback to WARP/software path.
+  ## UI/Spectrogram Performance
+  - Spectrogram Redraw: 60 FPS minimum
+  - Paint Latency: <16ms per frame
+  - Waveform Update: <8ms
+  - Peak Meter Response: <2ms
 
-MaskAtlas updates: use staging buffer + CopySubresourceRegion; no stalls on main loop.
+  ## GPU Rendering
+  - Frame Time: <16ms @ 1080p
+  - Device Lost Recovery: <100ms
+  - Shader Compilation: Background only
+  - VRAM Usage: <256MB
 
-Shaders (spectral_display.hlsl, trails.hlsl) must update in <16 ms frame budget.
+  ## Validation Thresholds
+  - pluginval strictness ≥5 required for commits
+  - Zero allocations in RT thread after init
+  - Memory growth <1MB/hour continuous operation
 
-No file I/O inside render loop.
+  ## Repository Hygiene Rules
 
-6. File Boundaries
+  **NO-BLOAT ENFORCEMENT:**
+  - Repository size MUST stay <50MB
+  - Never commit: `build/`, `out/`, `.vs/`, `*.zip`, `*backup*`
+  - Run `git clean -fdx` before commits
+  - Move old docs to `docs/archive/` not root level
+  - Delete generated files: logs, temp files, caches
 
-✅ Safe to edit: /Source/{audio,dsp,engine,ui,gpu} (excluding primitives).
+  **Monthly Cleanup:**
+  ```bash
+  # Size check
+  du -sh . 
 
-❌ Never touch: JUCE modules, generated files, DAW settings, toolchains.
+  # Bloat detection
+  find . -name "*.zip" -o -name "*backup*" -o -name "build*" -type d
 
-⚠️ Ask: Build configs, CI/CD, shell environment.
+  # Git cleanup
+  git gc --aggressive
+  git remote prune origin
+  ```
 
-7. Coding Standards
-
-C++20, JUCE 8.0.8, RAII, noexcept on RT paths.
-
-Use std::unique_ptr/std::array instead of raw pointers unless pre-allocated.
-
-Keep headers lean; prefer forward declarations.
-
-Use constexpr where possible.
-
-8. Task / Agent Orchestration (7-Split Pattern)
-
-Each feature must be broken down into:
-
-Components/APIs
-
-DSP/Engine logic
-
-RT wiring & queues
-
-GPU/shaders integration
-
-UI/UX
-
-Tests & perf harness
-
-Docs & developer notes
-
-9. Commit & PR Policy
-
-Titles: 5–6 words max.
-
-Body: list changes, tests, perf impact.
-
-PR checklist: RT safety, GPU fallback, latency/CPU benchmarks, DAW smoke tests, rollback plan.
-
-10. Observability
-
-Perf HUD (UI thread only): block time, queue depth, GPU frame time, xruns.
-
-No logging in RT paths — use ring-buffered counters for debugging.
-
-## Build & Test Commands
-
-Build: `cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build build`
-
-Test: `ctest --test-dir build -V`
-
-RT Safety: `build/Tests/RTSafetyTest`
-
-Pluginval: `build/pluginval.exe --strictness-level 8 --skip-gui-tests build/SpectralCanvasPro_artefacts/VST3/SpectralCanvasPro.vst3`
-
-## Performance Targets
-
-- Paint→Audio Latency: <5ms (p50), <10ms (p99)
-- CPU Usage: <15% @ 48kHz with all features
-- GPU Frame Time: <16ms @ 1080p
-- Queue Drops: 0 under normal load
+  **File Organization:**
+  - Essential docs only in root: `CLAUDE.md`, `BLUEPRINTS.md`, `AUDIO_PIPELINE_TRACE.md`
+  - Archive obsolete docs to `docs/archive/`
+  - Use clear, descriptive filenames
+  - Remove files immediately when obsolete, don't accumulate

@@ -105,6 +105,14 @@ void CanvasComponent::paint(juce::Graphics& g)
 #endif
                 }
                 break;
+            case SpectralCanvasProAudioProcessor::AudioPath::SpectralResynthesis:
+                pathStr = "Audio Path: Spectral Resynthesis ";
+                pathStr += wrote ? "(painting active)" : "(loaded, ready)";
+                if (audioProcessor.getSpectralModel().isReady()) {
+                    pathStr += " [" + juce::String(audioProcessor.getSpectralModel().numFrames()) 
+                             + "x" + juce::String(audioProcessor.getSpectralModel().numBins()) + "]";
+                }
+                break;
             case SpectralCanvasProAudioProcessor::AudioPath::Silent:
                 pathStr = "Audio Path: Silent";
                 break;

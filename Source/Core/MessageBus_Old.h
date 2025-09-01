@@ -192,11 +192,4 @@ using ParameterQueue = SPSCQueue<ParameterUpdate, 64>;       // UI → Audio
 using RenderCommandQueue = SPSCQueue<RenderCommand, 32>;     // UI → GPU
 using GestureCommandQueue = SPSCQueue<GestureCommand, 128>;  // UI → GPU (high frequency)
 
-// RT-safe assertions for debug builds
-#ifdef JUCE_DEBUG
-    #define RT_SAFE_ASSERT(condition) juce_assert(condition)
-    #define RT_SAFE_LOG(message) juce::Logger::writeToLog("[RT-SAFE] " message)
-#else
-    #define RT_SAFE_ASSERT(condition) ((void)0)
-    #define RT_SAFE_LOG(message) ((void)0)
-#endif
+// RT-safe assertions are now defined in RealtimeSafeTypes.h to avoid redefinition

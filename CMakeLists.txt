@@ -169,5 +169,13 @@ include(pluginval.cmake)
 option(BUILD_TESTING "Enable testing with CTest" ON)
 if(BUILD_TESTING)
     enable_testing()
+    
+    # Stricter warnings in tests for catching issues early
+    if(MSVC)
+        add_compile_options($<$<CONFIG:Debug>:/W4> $<$<CONFIG:RelWithDebInfo>:/W4> $<$<CONFIG:Debug>:/WX>)
+    else()
+        add_compile_options($<$<CONFIG:Debug>:-Wall -Wextra -Wpedantic -Werror>)
+    endif()
+    
     add_subdirectory(Tests)
 endif()

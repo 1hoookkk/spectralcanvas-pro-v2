@@ -141,14 +141,13 @@ private:
 
 /**
  * RT-safety assertions for debug builds
+ * Note: RT_ASSERT_AUDIO_THREAD is now defined in RealtimeSafeTypes.h to avoid redefinition
  */
 #ifdef JUCE_DEBUG
-    #define RT_ASSERT_AUDIO_THREAD() ContinuousVerification::assertAudioThread()
     #define RT_ASSERT_NOT_AUDIO_THREAD() ContinuousVerification::assertNotAudioThread()
     #define RT_SAFE_SCOPE_TIMER(verifier, blockSize) \
         ContinuousVerification::ScopedBlockTimer timer(verifier, blockSize)
 #else
-    #define RT_ASSERT_AUDIO_THREAD() ((void)0)
     #define RT_ASSERT_NOT_AUDIO_THREAD() ((void)0)
     #define RT_SAFE_SCOPE_TIMER(verifier, blockSize) ((void)0)
 #endif

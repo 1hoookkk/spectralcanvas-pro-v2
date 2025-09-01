@@ -143,5 +143,71 @@
 
 ---
 
-*Last Updated: 2025-08-27*  
+## 🧹 REPOSITORY CLEANUP CHECKLIST
+
+### IMMEDIATE CLEANUP (Safe to Delete - 200MB+ reduction)
+
+#### Archive Files - DELETE ALL
+- [ ] `Source.zip` (111K)
+- [ ] `Source - 1.zip` (225K) 
+- [ ] `Source - 2.zip` (113K)
+- [ ] `Source - 3.zip` (116K)
+- [ ] `Source - 4.zip` (118K)
+- [ ] `Source - 5.zip` (118K)
+- [ ] `Source - 6.zip` (150K)
+- [ ] `.agent-os.zip` (94K)
+- [ ] `SpectralCanvasPro_Patch_v0_1.zip` (9.6K)
+
+#### Build Artifacts - DELETE ALL
+- [ ] `build_clean/` (~150MB)
+- [ ] `build_minimal/` 
+- [ ] `out/` 
+- [ ] `.vs/`
+- [ ] `pluginval-logs/`
+
+#### Obsolete Documentation - DELETE ALL
+- [ ] `GRAVEYARD.md` (11K)
+- [ ] `RESEARCH_ARCHIVE.md` (12K)
+- [ ] `CUSTOM_GPT_SPECIFICATION.md` (5K)
+- [ ] `DUAL_GPT_STRATEGY.md` (6K)
+- [ ] `GEMS.md` (6K)
+- [ ] `UI_ARCHITECTURE_ANALYSIS.md` (13K)
+- [ ] `ARCHITECTURAL_PATTERNS_SUMMARY.md` (9.8K)
+- [ ] `DEVELOPMENT_ROADMAP.md` (8.1K)
+
+#### Development Salvage - DELETE ALL  
+- [ ] `SALVAGE_OUT/` (1.5MB)
+- [ ] `SpectralCanvasPro_Patch_v0_1/`
+
+#### Agent System - DELETE ALL
+- [ ] `.agent-os/` (~150KB)
+
+#### Test/Development Files - DELETE ALL
+- [ ] `MinimalTest.cpp`
+- [ ] `MinimalTest.h` 
+- [ ] `CMakeLists_minimal.txt`
+- [ ] `test_processor.cpp`
+- [ ] `setup-spectralcanvas.ps1`
+
+#### Git Cleanup - CAREFUL
+- [ ] Remove `backup-before-salvage` branch if no longer needed
+- [ ] Check `.git/` size and consider `git gc --aggressive`
+
+### POST-CLEANUP VALIDATION
+- [ ] Verify build still works: `cmake -B build && cmake --build build`
+- [ ] Verify tests still work: `ctest --test-dir build -V`
+- [ ] Check repository size: `du -sh .` (should be <50MB)
+- [ ] Update .gitignore to prevent future bloat
+- [ ] Document cleanup in git commit
+
+### LEAN MAINTENANCE PRACTICES  
+- [ ] Never commit build artifacts (`build/`, `out/`, `.vs/`)
+- [ ] Never commit archives (`.zip`, `.tar`, backups)
+- [ ] Archive old docs to `docs/archive/` instead of root
+- [ ] Use `git clean -fdx` before commits
+- [ ] Review repo size monthly: `du -sh . && find . -name "*.zip" -o -name "*backup*"`
+
+---
+
+*Last Updated: 2025-08-31*  
 *Total Estimated Timeline: ~12 weeks to commercial beta*

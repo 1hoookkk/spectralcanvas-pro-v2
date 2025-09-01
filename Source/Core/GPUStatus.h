@@ -1,147 +1,118 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <chrono>
 
-/// @brief Lock-free GPU telemetry struct for UI thread sampling
-/// 
-/// This struct provides atomic counters and status flags that can be safely
-/// read by the UI thread while being updated by the GPU/render thread.
-/// All values use atomic operations to ensure thread safety without locks.
-///
-/// RT Safety: Read operations are lock-free and suitable for RT contexts.
-/// The UI thread samples these values at 60fps for status display.
-struct alignas(64) GPUStatus
+/**
+ * GPU Status and Performance Telemetry
+ * 
+ * Atomic status tracking for D3D11 device state, frame timing, and recovery metrics.
+ * Used for device-lost detection, performance monitoring, and WARP fallback coordination.
+ * 
+ * RT Safety: All methods are lock-free and safe to call from any thread.
+ */
+class GPUStatus
 {
-    /// Device states for resilience state machine
-    enum DeviceState : int32_t
+public:
+    /// Device state enumeration
+    enum DeviceState : uint32_t
     {
-        OK = 0,           ///< Device operational, hardware rendering
-        REMOVED = 1,      ///< Device lost, recovery in progress  
-        RECREATING = 2,   ///< Attempting device recreation
-        WARP_FALLBACK = 3 ///< Using WARP software renderer
+        OK = 0,              ///< Device operational
+        REMOVED = 1,         ///< Device lost, recovery needed
+        RECREATING = 2,      ///< Recovery in progress
+        WARP_FALLBACK = 3    ///< Software rendering fallback
     };
     
-    /// Current device state (atomic read/write)
-    std::atomic<DeviceState> device_state{OK};
+    GPUStatus() noexcept
+        : device_state_(OK)
+        , frame_time_us_(16666)  // 60fps default
+        , recovery_count_(0)
+        , last_recovery_timestamp_(0)
+        , dropped_frame_count_(0)
+        , is_warp_mode_(false)
+    {}
     
-    /// Rolling average frame time in microseconds
-    std::atomic<uint32_t> frame_time_us{16666}; // Default ~60fps
-    
-    /// Number of device recovery attempts completed
-    std::atomic<uint32_t> recovery_count{0};
-    
-    /// Timestamp of last successful recovery (steady_clock::time_point as uint64_t)
-    std::atomic<uint64_t> last_recovery_timestamp{0};
-    
-    /// Frame counter (increments each present, for continuity validation)
-    std::atomic<uint64_t> frame_counter{0};
-    
-    /// Peak frame time in current second (resets every ~60 frames)
-    std::atomic<uint32_t> peak_frame_time_us{0};
-    
-    /// Number of frames dropped due to device issues
-    std::atomic<uint32_t> dropped_frame_count{0};
-    
-    /// Whether currently using WARP renderer (for UI indication)
-    std::atomic<bool> is_warp_mode{false};
-    
-    /// GPU memory usage estimate in bytes (updated periodically)
-    std::atomic<uint64_t> gpu_memory_usage{0};
-    
-    /// RT-safe methods for updating telemetry
-    
-    /// @brief Record frame completion with timing
-    inline void recordFrameTime(uint32_t microseconds) noexcept
-    {
-        frame_time_us.store(microseconds, std::memory_order_release);
-        frame_counter.fetch_add(1, std::memory_order_acq_rel);
-        
-        // Update peak within current measurement window
-        uint32_t current_peak = peak_frame_time_us.load(std::memory_order_acquire);
-        if (microseconds > current_peak)
-        {
-            peak_frame_time_us.compare_exchange_weak(current_peak, microseconds, 
-                                                     std::memory_order_release);
-        }
+    // Device state management
+    DeviceState getDeviceState() const noexcept 
+    { 
+        return static_cast<DeviceState>(device_state_.load(std::memory_order_acquire)); 
     }
     
-    /// @brief Signal device state change
-    inline void setDeviceState(DeviceState new_state) noexcept
-    {
-        device_state.store(new_state, std::memory_order_release);
-        
-        // Record recovery completion timestamp
-        if (new_state == OK || new_state == WARP_FALLBACK)
-        {
-            auto now = std::chrono::steady_clock::now();
-            auto timestamp = now.time_since_epoch().count();
-            last_recovery_timestamp.store(static_cast<uint64_t>(timestamp), 
-                                         std::memory_order_release);
-            
-            if (new_state == OK && recovery_count.load(std::memory_order_acquire) > 0)
-            {
-                // Successful recovery from previous failure
-                recovery_count.fetch_add(1, std::memory_order_acq_rel);
-            }
-        }
-        
-        is_warp_mode.store(new_state == WARP_FALLBACK, std::memory_order_release);
+    void setDeviceState(DeviceState state) noexcept 
+    { 
+        device_state_.store(static_cast<uint32_t>(state), std::memory_order_release);
+        if (state == WARP_FALLBACK)
+            is_warp_mode_.store(true, std::memory_order_relaxed);
+        else if (state == OK)
+            is_warp_mode_.store(false, std::memory_order_relaxed);
     }
     
-    /// @brief Increment dropped frame counter
-    inline void recordDroppedFrame() noexcept
-    {
-        dropped_frame_count.fetch_add(1, std::memory_order_acq_rel);
+    // Frame timing
+    uint32_t getFrameTimeUs() const noexcept 
+    { 
+        return frame_time_us_.load(std::memory_order_relaxed); 
     }
     
-    /// @brief Reset peak frame time (called periodically from UI thread)
-    inline void resetPeakFrameTime() noexcept
-    {
-        peak_frame_time_us.store(0, std::memory_order_release);
+    void recordFrameTime(uint32_t microseconds) noexcept 
+    { 
+        frame_time_us_.store(microseconds, std::memory_order_relaxed); 
     }
     
-    /// UI thread sampling methods (all lock-free reads)
-    
-    inline DeviceState getDeviceState() const noexcept
-    {
-        return device_state.load(std::memory_order_acquire);
+    // Recovery tracking
+    uint32_t getRecoveryCount() const noexcept 
+    { 
+        return recovery_count_.load(std::memory_order_relaxed); 
     }
     
-    inline uint32_t getFrameTimeUs() const noexcept
-    {
-        return frame_time_us.load(std::memory_order_acquire);
+    void incrementRecoveryCount() noexcept 
+    { 
+        recovery_count_.fetch_add(1, std::memory_order_relaxed);
+        last_recovery_timestamp_.store(
+            std::chrono::steady_clock::now().time_since_epoch().count(),
+            std::memory_order_relaxed
+        );
     }
     
-    inline uint32_t getPeakFrameTimeUs() const noexcept
-    {
-        return peak_frame_time_us.load(std::memory_order_acquire);
+    uint64_t getLastRecoveryTimestamp() const noexcept 
+    { 
+        return last_recovery_timestamp_.load(std::memory_order_relaxed); 
     }
     
-    inline uint32_t getRecoveryCount() const noexcept
-    {
-        return recovery_count.load(std::memory_order_acquire);
+    // Frame drop tracking
+    uint32_t getDroppedFrameCount() const noexcept 
+    { 
+        return dropped_frame_count_.load(std::memory_order_relaxed); 
     }
     
-    inline uint64_t getFrameCounter() const noexcept
-    {
-        return frame_counter.load(std::memory_order_acquire);
+    void recordDroppedFrame() noexcept 
+    { 
+        dropped_frame_count_.fetch_add(1, std::memory_order_relaxed); 
     }
     
-    inline bool isWarpMode() const noexcept
-    {
-        return is_warp_mode.load(std::memory_order_acquire);
+    // WARP mode detection
+    bool isWarpMode() const noexcept 
+    { 
+        return is_warp_mode_.load(std::memory_order_relaxed); 
     }
     
-    inline uint32_t getDroppedFrameCount() const noexcept
+    // Performance helpers
+    float getFrameRate() const noexcept
     {
-        return dropped_frame_count.load(std::memory_order_acquire);
+        uint32_t frame_time = getFrameTimeUs();
+        return frame_time > 0 ? 1000000.0f / frame_time : 0.0f;
     }
     
-    inline uint64_t getLastRecoveryTimestamp() const noexcept
+    bool isPerformanceAcceptable(uint32_t max_frame_time_us = 16666) const noexcept
     {
-        return last_recovery_timestamp.load(std::memory_order_acquire);
+        return getFrameTimeUs() <= max_frame_time_us;
     }
-};
 
-static_assert(sizeof(GPUStatus) % 64 == 0, "GPUStatus must be cache-line aligned");
+private:
+    std::atomic<uint32_t> device_state_;            ///< Current device state
+    std::atomic<uint32_t> frame_time_us_;           ///< Last frame time in microseconds
+    std::atomic<uint32_t> recovery_count_;          ///< Number of recovery attempts
+    std::atomic<uint64_t> last_recovery_timestamp_; ///< Timestamp of last recovery
+    std::atomic<uint32_t> dropped_frame_count_;     ///< Number of dropped frames
+    std::atomic<bool> is_warp_mode_;                ///< Software rendering active
+};

@@ -1,41 +1,39 @@
 #pragma once
-#include <atomic>
-#include <cstddef>
 
-// Single‑producer / single‑consumer lock‑free ring buffer.
-// Capacity must be a power of two.
+/**
+ * DEPRECATED: SpscRingBuffer.h - Use Core/MessageBus.h SpscRing instead
+ * 
+ * This header is deprecated to prevent implementation divergence.
+ * The canonical SPSC queue implementation is in Core/MessageBus.h
+ * which provides additional features like drop counting and RT-safe statistics.
+ */
+
+// Compiler warnings to encourage migration
+#if defined(_MSC_VER)
+  #pragma message("Warning: Source/DSP/SpscRingBuffer.h is deprecated; use Source/Core/MessageBus.h SpscRing instead")
+#elif defined(__clang__) || defined(__GNUC__)
+  #warning "Source/DSP/SpscRingBuffer.h is deprecated; include Source/Core/MessageBus.h and use SpscRing instead"
+#endif
+
+// Include the canonical implementation
+#include "../Core/MessageBus.h"
+
+// Compatibility typedef for existing code
 template <typename T, std::size_t Capacity>
-class SpscRingBuffer
-{
-    static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be power of two");
-public:
-    SpscRingBuffer() noexcept : head_(0), tail_(0) {}
+using SpscRingBuffer = SpscRing<T, Capacity>;
 
-    bool push(const T& item) noexcept
-    {
-        const std::size_t h = head_.load(std::memory_order_relaxed);
-        const std::size_t next = (h + 1) & (Capacity - 1);
-        if (next == tail_.load(std::memory_order_acquire))
-            return false; // full
-        buffer_[h] = item; // trivial copy
-        head_.store(next, std::memory_order_release);
-        return true;
-    }
-
-    bool pop(T& out) noexcept
-    {
-        const std::size_t t = tail_.load(std::memory_order_relaxed);
-        if (t == head_.load(std::memory_order_acquire))
-            return false; // empty
-        out = buffer_[t];
-        tail_.store((t + 1) & (Capacity - 1), std::memory_order_release);
-        return true;
-    }
-
-    bool empty() const noexcept { return head_.load() == tail_.load(); }
-
-private:
-    T buffer_[Capacity];
-    std::atomic<std::size_t> head_;
-    std::atomic<std::size_t> tail_;
-};
+// Note: The old SpscRingBuffer API was:
+//   bool push(const T& item)
+//   bool pop(T& out) 
+//   bool empty()
+//
+// The new SpscRing API is:
+//   bool push(const T& v)
+//   std::optional<T> pop()
+//   bool hasDataAvailable()
+//   bool hasSpaceAvailable()
+//
+// Migration guidance:
+// - Replace pop(T& out) with auto opt = pop(); if (opt) { T value = *opt; ... }
+// - Replace empty() with !hasDataAvailable()
+// - The new API provides additional statistics: getPushCount(), getDropCount(), etc.

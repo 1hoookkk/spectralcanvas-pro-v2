@@ -31,7 +31,8 @@ public:
         Silent = 0,
         TestFeeder,
         Phase4Synth,
-        ModernPaint  // New JUCE DSP-based spectral painting
+        ModernPaint,        // New JUCE DSP-based spectral painting
+        SpectralResynthesis // Spectral resynthesis from loaded audio file
     };
 
     SpectralCanvasProAudioProcessor();

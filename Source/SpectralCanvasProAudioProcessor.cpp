@@ -232,6 +232,7 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     // Check if spectral pipeline should handle audio
     if (spectralReady && spectralModel.isReady())
     {
+        currentPath_.store(AudioPath::SpectralResynthesis, std::memory_order_relaxed);
         spectralPlayer.process(buffer);
         wroteAudioFlag_.store(true, std::memory_order_relaxed);
         return;

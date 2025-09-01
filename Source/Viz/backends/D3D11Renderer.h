@@ -61,6 +61,11 @@ public:
     uint32_t getRecoveryCount() const;
     bool isUsingWarp() const { return usingWarpRenderer_; }
     const GPUStatus& getGPUStatus() const { return gpuStatus_; }
+    
+    // Testing interface
+#ifdef _WIN32
+    HWND getStoredHWND() const noexcept { return windowHandle_; }
+#endif
 
 private:
     // D3D11 Core objects
@@ -181,6 +186,9 @@ private:
     // Frame timing for telemetry
     std::chrono::high_resolution_clock::time_point frameStartTime_;
     
+    // Window handle storage for device recovery
+    HWND windowHandle_ = nullptr;
+    
     // Private methods
     bool createDevice(HWND windowHandle);
     bool createDevice(HWND windowHandle, bool forceWarp);
@@ -197,7 +205,7 @@ private:
     void logD3D11Error(HRESULT hr, const std::string& operation);
     
     // Device recovery methods
-    bool tryRecreateDevice(HWND windowHandle);
+    bool tryRecreateDevice();
     void releaseDeviceResources();
     bool recreateDeviceResources();
     
