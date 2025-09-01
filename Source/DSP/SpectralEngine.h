@@ -52,6 +52,7 @@ public:
     // Mask processing (RT-safe)
     void updateCurrentMask(const MaskColumn* maskColumn) noexcept;
     void updateCurrentMask(const float* maskPtr, int numBins) noexcept;
+    void applyMaskColumn(const MaskColumn& maskColumn) noexcept;
     
     // State queries (RT-safe)
     bool isInitialized() const noexcept { return initialized_.load(std::memory_order_acquire); }
@@ -88,6 +89,12 @@ private:
     std::atomic<bool> initialized_;
     std::atomic<int> samplesUntilNextFrame_;
     std::atomic<double> sampleRate_;
+    
+    // Carrier injection for silence detection
+    std::atomic<bool> carrierEnabled_{true};
+    float carrierPhase_ = 0.0f;
+    static constexpr float CARRIER_FREQ = 440.0f; // A4 for testing
+    static constexpr float CARRIER_AMP = 0.01f; // -40dB
     
     // RT-safe parameters
     std::atomic<float> spectralGain_;
