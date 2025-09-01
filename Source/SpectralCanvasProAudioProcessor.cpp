@@ -308,7 +308,7 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
                 if (sampleMsg.isValid())
                 {
                     auto& memSys = RealtimeMemorySystem::getInstance();
-                    auto view = memSys.samples.lookup(sampleMsg.handle);
+                    auto view = memSys.samples().lookup(sampleMsg.handle);
                     if (view)
                     {
                         currentSample = *view;
@@ -576,7 +576,7 @@ bool SpectralCanvasProAudioProcessor::loadSampleFile(const juce::File& audioFile
     
     // NEW: Also load into RT-safe handle system for direct playback
     auto& memSys = RealtimeMemorySystem::getInstance();
-    auto handle = memSys.samples.allocate();
+    auto handle = memSys.samples().allocate();
     if (handle)
     {
         const auto& sampleData = sampleManager.get();
@@ -605,19 +605,21 @@ bool SpectralCanvasProAudioProcessor::loadSampleFile(const juce::File& audioFile
             
             SampleView view(channelPtrs.data(), numChannels, numSamples, sampleData.sampleRate);
             
-            if (memSys.samples.publish(*handle, view))
+            if (memSys.samples().publish(*handle, view))
             {
-                SampleMessage msg(*handle, juce::Time::getMillisecondCounter() * 1000);
+                SampleMessage msg;
+                msg.handle = *handle;
+                msg.tscOrUsec = juce::Time::getMillisecondCounter() * 1000;
                 sampleQueue.push(msg);
             }
             else
             {
-                memSys.samples.free(*handle);
+                memSys.samples().free(*handle);
             }
         }
         else
         {
-            memSys.samples.free(*handle);
+            memSys.samples().free(*handle);
         }
     }
     

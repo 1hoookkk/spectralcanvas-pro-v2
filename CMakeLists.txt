@@ -4,6 +4,11 @@ project(SpectralCanvasPro VERSION 0.1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Ensure core headers are visible to all targets
+set(SCP_INCLUDE_DIRS
+    ${CMAKE_CURRENT_SOURCE_DIR}/Source
+    ${CMAKE_CURRENT_SOURCE_DIR}/Source/Core)
+
 include(FetchContent)
 FetchContent_Declare(juce
   GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
@@ -17,7 +22,7 @@ juce_add_plugin(SpectralCanvasPro
     IS_SYNTH TRUE
     PLUGIN_CODE Scp1
     FORMATS VST3 Standalone
-    PRODUCT_NAME "spectralCanvas Pro"
+    PRODUCT_NAME "SpectralCanvasPro"
     MICROPHONE_PERMISSION_ENABLED FALSE
     BUNDLE_ID com.spectralcanvas.pro
 )
@@ -44,6 +49,10 @@ target_sources(SpectralCanvasPro PRIVATE
     Source/Core/GPUStatus.h
     Source/Core/RealtimeMemoryManager.h
     Source/Core/SampleMessage.h
+    Source/Core/SpscRingBuffer.h
+    Source/Core/MaskColumn.h
+    Source/Core/ParameterUpdate.h
+    Source/Core/SpectralFrame.h
     Source/Core/ColorToSpectralMapper.h
     Source/Core/ColorToSpectralMapper.cpp
     Source/Core/AtomicOscillator.h
@@ -111,6 +120,8 @@ target_sources(SpectralCanvasPro PRIVATE
     # Source/Viz/shaders/ShaderCommon.hlsl
     # Source/Viz/shaders/ShaderConfig.hlsl
 )
+
+target_include_directories(SpectralCanvasPro PRIVATE ${SCP_INCLUDE_DIRS})
 
 target_compile_definitions(SpectralCanvasPro
     PRIVATE
