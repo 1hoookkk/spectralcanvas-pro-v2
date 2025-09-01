@@ -1,5 +1,6 @@
 #include "CanvasComponent.h"
 #include "../Core/Params.h"
+#include "../Core/MessageBus.h"
 #include <chrono>
 
 // Constants for RT-safe paint-to-sound
@@ -159,7 +160,7 @@ void CanvasComponent::paint(juce::Graphics& g)
         
         // GPU Status Display
         g.setColour(juce::Colours::lightblue);
-        g.drawText("GPU: Phase 4 Resilience Ready (No Active Renderer)",
+        g.drawText("GPU: Phase 4 Resilience Ready (D3D11 Active)",
                    x, y, panel.getWidth()-20, lh, juce::Justification::left);
         
         // Avoid unused warnings

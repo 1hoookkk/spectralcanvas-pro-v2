@@ -6,6 +6,7 @@
 #include "GUI/MinimalTopStrip.h"
 #include "GUI/PerfHUD.h"
 #include "GUI/SpectrogramComponent.h"
+#include "Viz/GpuRenderer.h"
 
 /**
  * Phase 2-3 Minimal UI Editor
@@ -46,6 +47,9 @@ private:
     // Spectral painting components
     juce::TextButton loadButton { "Load Sample" };
     SpectrogramComponent spectrogram;
+    
+    // GPU renderer
+    std::unique_ptr<GpuRenderer> renderer;
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectralCanvasProEditor)
 };

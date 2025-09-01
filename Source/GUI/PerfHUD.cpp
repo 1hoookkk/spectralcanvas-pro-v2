@@ -2,11 +2,12 @@
 #include "../SpectralCanvasProAudioProcessor.h"
 #include "../Core/ContinuousVerification.h"
 #include "../Core/GPUStatus.h"
+#include "../Viz/GpuRenderer.h"
 
 #ifdef DISABLE_PERF_HUD
 // Compile-time rollback option
-PerfHUD::PerfHUD(SpectralCanvasProAudioProcessor& processor) 
-    : audioProcessor_(processor) 
+PerfHUD::PerfHUD(SpectralCanvasProAudioProcessor& processor, GpuRenderer* renderer) 
+    : audioProcessor_(processor), gpuRenderer_(renderer) 
 {
     setVisible(false);
 }
@@ -23,8 +24,8 @@ uint64_t PerfHUD::getCurrentTimestamp() const noexcept { return 0; }
 
 #else
 
-PerfHUD::PerfHUD(SpectralCanvasProAudioProcessor& processor)
-    : audioProcessor_(processor)
+PerfHUD::PerfHUD(SpectralCanvasProAudioProcessor& processor, GpuRenderer* renderer)
+    : audioProcessor_(processor), gpuRenderer_(renderer)
     , monoFont_(juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain)
 {
     // Start hidden by default (controlled by parameter)
@@ -183,12 +184,19 @@ PerfHUD::Metrics PerfHUD::sampleMetrics() noexcept
         metrics.cpuPercent = 0.0f; // No CPU monitoring in release builds
 #endif
         
-        // TODO: Sample GPU status from renderer when available
-        // For now, use defaults
-        metrics.gpuFrameTimeUs = 16666; // ~60fps
-        metrics.gpuPeakFrameUs = 16666;
-        metrics.isWarpMode = false;
-        metrics.deviceOk = true;
+        // Sample GPU status from renderer if available
+        if (gpuRenderer_ && gpuRenderer_->isInitialized()) {
+            metrics.gpuFrameTimeUs = static_cast<uint32_t>(gpuRenderer_->getFrameTime() * 1000.0f);
+            metrics.gpuPeakFrameUs = metrics.gpuFrameTimeUs; // TODO: track peak separately
+            metrics.isWarpMode = false; // TODO: query from D3D11Renderer
+            metrics.deviceOk = gpuRenderer_->checkDeviceStatus();
+        } else {
+            // No renderer or not initialized
+            metrics.gpuFrameTimeUs = 0;
+            metrics.gpuPeakFrameUs = 0;
+            metrics.isWarpMode = false;
+            metrics.deviceOk = false;
+        }
         metrics.recoveryCount = 0;
         metrics.lastRecoveryTimestamp = 0;
         metrics.queueDepthGPU = 0;

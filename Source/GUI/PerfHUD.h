@@ -7,6 +7,7 @@
 
 // Forward declarations to avoid circular dependencies
 class SpectralCanvasProAudioProcessor;
+class GpuRenderer;
 
 /**
  * @file PerfHUD.h
@@ -25,7 +26,7 @@ class PerfHUD : public juce::Component,
                 private juce::Timer
 {
 public:
-    explicit PerfHUD(SpectralCanvasProAudioProcessor& processor);
+    explicit PerfHUD(SpectralCanvasProAudioProcessor& processor, GpuRenderer* renderer = nullptr);
     ~PerfHUD() override;
     
     // Component interface
@@ -73,6 +74,7 @@ private:
     uint64_t getCurrentTimestamp() const noexcept;
     
     SpectralCanvasProAudioProcessor& audioProcessor_;
+    GpuRenderer* gpuRenderer_;
     
     // Cached metrics from last update
     Metrics lastMetrics_;

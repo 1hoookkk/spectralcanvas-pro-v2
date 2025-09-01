@@ -122,10 +122,10 @@ void SpectralCanvasProAudioProcessor::buildParameterSnapshot() noexcept
 void SpectralCanvasProAudioProcessor::processQueuedCommands() noexcept
 {
     // Process parameter updates with sample-accurate timing
-    std::optional<ParameterUpdate> paramUpdate;
-    while ((paramUpdate = parameterQueue.pop()).has_value())
+    ParameterUpdate paramUpdate;
+    while (parameterQueue.pop(paramUpdate))
     {
-        const auto& update = *paramUpdate;
+        const auto& update = paramUpdate;
         
         // Validate command version for compatibility
         if (update.version != 1) continue;
@@ -137,10 +137,10 @@ void SpectralCanvasProAudioProcessor::processQueuedCommands() noexcept
     }
     
     // Process mask columns from paint system
-    std::optional<MaskColumn> maskUpdate;
-    while ((maskUpdate = maskColumnQueue.pop()).has_value())
+    MaskColumn maskUpdate;
+    while (maskColumnQueue.pop(maskUpdate))
     {
-        const auto& mask = *maskUpdate;
+        const auto& mask = maskUpdate;
         
         // Validate and apply mask with engine frame timing
         if (mask.version == 1 && coreEngine)

@@ -1,5 +1,6 @@
 #include "SpectralCanvasProEditor.h"
 #include "Core/Params.h"
+#include "Viz/backends/D3D11Renderer.h"
 
 SpectralCanvasProEditor::SpectralCanvasProEditor(SpectralCanvasProAudioProcessor& p)
     : AudioProcessorEditor(&p), audioProcessor(p)
@@ -14,8 +15,14 @@ SpectralCanvasProEditor::SpectralCanvasProEditor(SpectralCanvasProAudioProcessor
     topStrip = std::make_unique<MinimalTopStrip>(audioProcessor.apvts);
     addAndMakeVisible(*topStrip);
     
-    // Phase 5 Performance HUD (initially hidden)
-    perfHUD = std::make_unique<PerfHUD>(audioProcessor);
+    // Create GPU renderer first
+#if JUCE_WINDOWS
+    renderer = std::make_unique<D3D11Renderer>();
+    renderer->initialize(getTopLevelComponent()->getWindowHandle(), 1200, 800);
+#endif
+
+    // Phase 5 Performance HUD (initially hidden) - pass renderer for real GPU metrics
+    perfHUD = std::make_unique<PerfHUD>(audioProcessor, renderer.get());
     addAndMakeVisible(*perfHUD);
     
     // Listen for HUD toggle parameter changes
@@ -43,6 +50,10 @@ SpectralCanvasProEditor::SpectralCanvasProEditor(SpectralCanvasProAudioProcessor
 
 SpectralCanvasProEditor::~SpectralCanvasProEditor()
 {
+    // Ensure renderer shutdown before destruction
+    if (renderer) 
+        renderer->shutdown();
+        
     // Remove parameter listener
     audioProcessor.getValueTreeState().removeParameterListener(Params::ParameterIDs::showPerfHud, this);
     

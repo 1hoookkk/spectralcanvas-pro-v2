@@ -322,10 +322,10 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
             int masksPopped = 0;
             while (masksPopped < MAX_MASKS_PER_BLOCK)
             {
-                auto maskOpt = maskColumnQueue.pop();
-                if (!maskOpt.has_value()) break;
+                MaskColumn mask;
+                if (!maskColumnQueue.pop(mask)) break;
                 
-                maskRing_[maskRingIdx_] = std::move(*maskOpt);
+                maskRing_[maskRingIdx_] = std::move(mask);
                 maskRingIdx_ = (maskRingIdx_ + 1) % MAX_MASKS_PER_BLOCK;
                 masksPopped++;
             }
