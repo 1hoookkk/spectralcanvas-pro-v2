@@ -53,6 +53,8 @@ target_sources(SpectralCanvasPro PRIVATE
     Source/Core/MaskColumn.h
     Source/Core/ParameterUpdate.h
     Source/Core/SpectralFrame.h
+    Source/Core/TimeUtils.h
+    Source/Core/PlatformTimeUtils.h
     Source/Core/ColorToSpectralMapper.h
     Source/Core/ColorToSpectralMapper.cpp
     Source/Core/AtomicOscillator.h
@@ -133,12 +135,14 @@ target_compile_definitions(SpectralCanvasPro
     PRIVATE
       JUCE_WEB_BROWSER=0
       JUCE_USE_CURL=0
-      JUCE_DISPLAY_SPLASH_SCREEN=0
       JUCE_VST3_CAN_REPLACE_VST2=0
       JUCE_STRICT_REFCOUNTEDPOINTER=1
       PHASE4_EXPERIMENT=1
       JUCE_USE_MP3AUDIOFORMAT=1
 )
+
+# Test build control
+option(ENABLE_TESTS "Build test executables" OFF)
 
 # GPU resilience feature flag
 option(DISABLE_GPU_RESILIENCE "Disable GPU device-lost recovery and WARP fallback" OFF)
@@ -212,5 +216,18 @@ if(BUILD_TESTING)
         add_compile_options($<$<CONFIG:Debug>:-Wall -Wextra -Wpedantic -Werror>)
     endif()
     
-    add_subdirectory(Tests)
+    if(ENABLE_TESTS)
+        # Fetch GoogleTest for testing
+        include(FetchContent)
+        FetchContent_Declare(
+            googletest
+            GIT_REPOSITORY https://github.com/google/googletest.git
+            GIT_TAG v1.14.0
+        )
+        # For Windows: Prevent overriding the parent project's compiler/linker settings
+        set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+        FetchContent_MakeAvailable(googletest)
+        
+        add_subdirectory(Tests)
+    endif()
 endif()

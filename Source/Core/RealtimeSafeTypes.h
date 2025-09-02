@@ -202,7 +202,7 @@ private:
                 for (size_t n = 0; n < WindowSize; ++n)
                 {
                     const float factor = static_cast<float>(n) / N;
-                    window_[n] = 0.5f * (1.0f - std::cos(2.0f * M_PI * factor));
+                    window_[n] = 0.5f * (1.0f - std::cos(2.0f * static_cast<float>(M_PI) * factor));
                 }
                 break;
                 
@@ -210,7 +210,7 @@ private:
                 for (size_t n = 0; n < WindowSize; ++n)
                 {
                     const float factor = static_cast<float>(n) / N;
-                    window_[n] = 0.54f - 0.46f * std::cos(2.0f * M_PI * factor);
+                    window_[n] = 0.54f - 0.46f * std::cos(2.0f * static_cast<float>(M_PI) * factor);
                 }
                 break;
                 
@@ -218,8 +218,8 @@ private:
                 for (size_t n = 0; n < WindowSize; ++n)
                 {
                     const float factor = static_cast<float>(n) / N;
-                    window_[n] = 0.42f - 0.5f * std::cos(2.0f * M_PI * factor) 
-                               + 0.08f * std::cos(4.0f * M_PI * factor);
+                    window_[n] = 0.42f - 0.5f * std::cos(2.0f * static_cast<float>(M_PI) * factor) 
+                               + 0.08f * std::cos(4.0f * static_cast<float>(M_PI) * factor);
                 }
                 break;
                 

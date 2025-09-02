@@ -1,4 +1,5 @@
 #include "DiagnosticLogger.h"
+#include "PlatformTimeUtils.h"
 #include <chrono>
 #include <iomanip>
 
@@ -24,9 +25,19 @@ namespace DiagnosticLogger
 
         // Format: [HH:MM:SS.mmm] [CAT] [LEVEL] filename:line - message
         std::stringstream ss;
-        ss << "[" << std::put_time(std::localtime(&timeT), "%H:%M:%S") 
-           << "." << std::setfill('0') << std::setw(3) << ms.count() << "] "
-           << "[" << getCategoryName(category) << "] "
+        std::tm localTime;
+        if (PlatformTimeUtils::getLocalTime(&localTime, &timeT))
+        {
+            ss << "[" << std::put_time(&localTime, "%H:%M:%S") 
+               << "." << std::setfill('0') << std::setw(3) << ms.count() << "] ";
+        }
+        else
+        {
+            // Fallback if localtime conversion fails
+            ss << "[??:??:??.???] ";
+        }
+        
+        ss << "[" << getCategoryName(category) << "] "
            << "[" << getLevelName(level) << "] "
            << filename << ":" << line << " - " << message.toStdString();
 

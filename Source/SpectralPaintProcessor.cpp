@@ -42,7 +42,8 @@ void SpectralPaintProcessor::processBlock(const juce::dsp::ProcessContextReplaci
         {
             for (size_t sample = 0; sample < numSamples; ++sample)
             {
-                outputBlock.setSample(ch, sample, inputBlock.getSample(ch, sample));
+                outputBlock.setSample(static_cast<int>(ch), static_cast<int>(sample), 
+                                    inputBlock.getSample(static_cast<int>(ch), static_cast<int>(sample)));
             }
         }
         return;

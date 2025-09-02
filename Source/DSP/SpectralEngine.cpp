@@ -26,6 +26,7 @@ void SpectralEngine::initialize(double sampleRate, int maxBlockSize)
 {
     RT_SAFE_LOG("Initializing SpectralEngine with sample rate: " + juce::String(sampleRate));
     
+    juce::ignoreUnused(maxBlockSize); // Parameter reserved for future buffer optimization
     sampleRate_ = sampleRate;
     
     // Initialize FFT engines (allocation allowed here)
@@ -261,9 +262,9 @@ void SpectralEngine::applySpectralProcessing() noexcept
                 currentMagnitude_.get()[bin] = (1.0f - mix) * currentMagnitude_.get()[bin] + mix * targetMag;
 
                 // Bin-centered phase increment for coherent partials
-                phaseAcc[bin] += 2.0f * float(M_PI) * float(HOP_SIZE) * float(bin) / float(FFT_SIZE);
-                if (phaseAcc[bin] > float(M_PI))  phaseAcc[bin] -= 2.0f * float(M_PI);
-                if (phaseAcc[bin] < -float(M_PI)) phaseAcc[bin] += 2.0f * float(M_PI);
+                phaseAcc[bin] += 2.0f * static_cast<float>(M_PI) * static_cast<float>(HOP_SIZE) * static_cast<float>(bin) / static_cast<float>(FFT_SIZE);
+                if (phaseAcc[bin] > static_cast<float>(M_PI))  phaseAcc[bin] -= 2.0f * static_cast<float>(M_PI);
+                if (phaseAcc[bin] < -static_cast<float>(M_PI)) phaseAcc[bin] += 2.0f * static_cast<float>(M_PI);
                 currentPhase_.get()[bin] = phaseAcc[bin];
             }
         }
@@ -348,7 +349,7 @@ bool SpectralEngine::extractSpectralFrame(SpectralFrame& frame) noexcept
     
     // Set frame metadata
     frame.sequenceNumber = sequenceGenerator_.getNext();
-    frame.timestampSamples = currentTimeInSamples_.load(std::memory_order_relaxed);
+    frame.timestampSamples = static_cast<uint64_t>(std::llround(currentTimeInSamples_.load(std::memory_order_relaxed)));
     frame.fundamentalFreq = fundamentalFreq_.load(std::memory_order_relaxed);
     frame.spectralCentroid = spectralCentroid_.load(std::memory_order_relaxed);
     
@@ -422,7 +423,7 @@ void SpectralEngine::applyMaskColumn(const MaskColumn& maskColumn) noexcept
         }
         
         // Update phase (will wrap naturally)
-        carrierPhase_ += 2.0f * M_PI * CARRIER_FREQ / sampleRate;
+        carrierPhase_ += 2.0f * static_cast<float>(M_PI) * CARRIER_FREQ / static_cast<float>(sampleRate);
     }
     
     // Apply mask values to magnitude spectrum

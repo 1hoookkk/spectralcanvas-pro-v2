@@ -404,8 +404,8 @@ void CanvasComponent::timerCallback()
             uint64_t uiTimestampSamples = static_cast<uint64_t>((uiSteadyNanos - epochNanos) * sampleRate / 1e9);
             
             // Fill mask column
-            mask.timestampSamples = static_cast<double>(uiTimestampSamples);
-            mask.uiTimestampMicros = uiSteadyNanos / 1000;
+            mask.timestampSamples = static_cast<uint64_t>(uiTimestampSamples);
+            mask.uiTimestampMicros = static_cast<uint64_t>(uiSteadyNanos / 1000);
             mask.sequenceNumber = audioProcessor.getNextMaskSequenceNumber();
             mask.numBins = 257;
             mask.frameIndex = 0;
@@ -490,8 +490,8 @@ void CanvasComponent::createAndSendMaskColumn(juce::Point<float> mousePos)
     uint64_t uiTimestampSamples = static_cast<uint64_t>((uiSteadyNanos - epochNanos) * sampleRate / 1e9);
     
     // Fill mask column with validation data
-    mask.timestampSamples = static_cast<double>(uiTimestampSamples);  // Store as double for compatibility
-    mask.uiTimestampMicros = uiSteadyNanos / 1000;                    // Keep microseconds for backward compat
+    mask.timestampSamples = uiTimestampSamples;  // Store as uint64_t directly
+    mask.uiTimestampMicros = static_cast<uint64_t>(uiSteadyNanos / 1000);  // Convert nanoseconds to microseconds
     mask.sequenceNumber = audioProcessor.getNextMaskSequenceNumber();
     mask.numBins = 257; // Standard FFT size for validation
     mask.frameIndex = 0;
@@ -664,7 +664,7 @@ void CanvasComponent::pushMaskFromScreenY(float y) noexcept
     // Create MaskColumn and push directly to processor
     MaskColumn col;
     col.numBins = kNumBins;
-    col.timestampSamples = juce::Time::getMillisecondCounterHiRes() * 0.001;
+    col.timestampSamples = static_cast<uint64_t>(std::llround(juce::Time::getMillisecondCounterHiRes() * 0.001));
     col.sequenceNumber = audioProcessor.getNextMaskSequenceNumber();
     col.uiTimestampMicros = static_cast<uint64_t>(juce::Time::getHighResolutionTicks());
     
@@ -698,9 +698,9 @@ bool CanvasComponent::keyPressed(const juce::KeyPress& key)
             // Create test MaskColumn with strong 440Hz tone
             MaskColumn testCol;
             testCol.numBins = 257;
-            testCol.timestampSamples = juce::Time::getMillisecondCounterHiRes() * 0.001;
+            testCol.timestampSamples = static_cast<uint64_t>(std::llround(juce::Time::getMillisecondCounterHiRes() * 0.001));
             testCol.sequenceNumber = audioProcessor.getNextMaskSequenceNumber();
-            testCol.uiTimestampMicros = juce::Time::getHighResolutionTicksPerSecond();
+            testCol.uiTimestampMicros = static_cast<uint64_t>(juce::Time::getHighResolutionTicksPerSecond());
             
             // Clear all values first
             for (size_t i = 0; i < MaskColumn::MAX_BINS; ++i) {

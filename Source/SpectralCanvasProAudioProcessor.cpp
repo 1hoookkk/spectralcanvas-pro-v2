@@ -256,6 +256,9 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     const float brushSize = brushSizeSmoother_.getNextValue();
     const float brushStrength = brushStrengthSmoother_.getNextValue();
     
+    // These are prepared for future paint integration
+    juce::ignoreUnused(brushSize, brushStrength);
+    
     // Snapshot only the params needed for the chosen path (no APVTS lookups here)
     const bool keyFilterOn = keyFilterEnabled_.load(std::memory_order_relaxed);
 

@@ -26,7 +26,7 @@ uint64_t PerfHUD::getCurrentTimestamp() const noexcept { return 0; }
 
 PerfHUD::PerfHUD(SpectralCanvasProAudioProcessor& processor, GpuRenderer* renderer)
     : audioProcessor_(processor), gpuRenderer_(renderer)
-    , monoFont_(juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain)
+    , monoFont_(juce::FontOptions().withName(juce::Font::getDefaultMonospacedFontName()).withHeight(10.0f))
 {
     // Start hidden by default (controlled by parameter)
     setVisible(false);

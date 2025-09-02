@@ -156,6 +156,7 @@ void TopStrip::resized()
     const int topMargin = 30; // Space below title
     const int leftMargin = 12;
     const int sectionSpacing = 25;
+    juce::ignoreUnused(sectionSpacing); // Reserved for future section spacing
     
     int x = leftMargin;
     int y = topMargin;
