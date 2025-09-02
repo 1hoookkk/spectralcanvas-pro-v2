@@ -309,6 +309,9 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
             SampleMessage sampleMsg;
             while (sampleQueue.pop(sampleMsg))
             {
+                // Debug: Log that we're processing a sample message
+                juce::Logger::writeToLog("Audio Thread: Popped a message with handle " + juce::String(sampleMsg.handle));
+                
                 if (sampleMsg.isValid())
                 {
                     auto& memSys = RealtimeMemorySystem::getInstance();
@@ -318,7 +321,16 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
                         currentSample = *view;
                         currentSampleHandle = sampleMsg.handle;
                         samplePosition = 0; // Reset playback
+                        juce::Logger::writeToLog("Audio Thread: Sample activated for playback");
                     }
+                    else
+                    {
+                        juce::Logger::writeToLog("Audio Thread: Failed to lookup sample handle");
+                    }
+                }
+                else
+                {
+                    juce::Logger::writeToLog("Audio Thread: Invalid sample message received");
                 }
             }
             
