@@ -1,0 +1,71 @@
+name: SpectralCanvas Pro Tests
+
+on:
+  push:
+    branches: [ master, develop ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+        config: [Debug, RelWithDebInfo]
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Setup MSVC (Windows)
+      if: matrix.os == 'windows-latest'
+      uses: microsoft/setup-msbuild@v2
+    
+    - name: Configure CMake
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.config }} -DSPECTRAL_ENABLE_MP3=ON -DBUILD_TESTING=ON
+    
+    - name: Build
+      run: |
+        cmake --build build --config ${{ matrix.config }}
+    
+    - name: Verify MP3 Support (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        # Check that MediaFoundation flag is present in compile commands
+        if (Select-String -Path "build/compile_commands.json" -Pattern "JUCE_USE_WINDOWS_MEDIA_FOUNDATION" -Quiet) {
+          Write-Host "✓ MediaFoundation support enabled"
+        } else {
+          Write-Host "✗ MediaFoundation support not found"
+          exit 1
+        }
+      shell: powershell
+    
+    - name: Run Sample Loading Tests
+      run: |
+        cd build
+        ctest -R SampleLoading -V --output-on-failure
+    
+    - name: Run RT Safety Tests
+      run: |
+        cd build
+        ctest -R RTSafety -V --output-on-failure
+    
+    - name: Run All Tests
+      run: |
+        cd build
+        ctest -V --output-on-failure
+    
+    - name: Upload Test Logs (on failure)
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-logs-${{ matrix.os }}-${{ matrix.config }}
+        path: |
+          build/Testing/Temporary/LastTest.log
+          build/*.log
+        retention-days: 7

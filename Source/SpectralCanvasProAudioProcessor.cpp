@@ -1,5 +1,6 @@
 #include "SpectralCanvasProAudioProcessor.h"
 #include "SpectralCanvasProEditor.h"
+#include "Core/DiagnosticLogger.h"
 #include <chrono>
 
 SpectralCanvasProAudioProcessor::SpectralCanvasProAudioProcessor()
@@ -624,6 +625,72 @@ bool SpectralCanvasProAudioProcessor::loadSampleFile(const juce::File& audioFile
     }
     
     return spectralReady;
+}
+
+bool SpectralCanvasProAudioProcessor::hasActiveRenderer() const noexcept
+{
+    return hasActiveRenderer_.load(std::memory_order_acquire);
+}
+
+bool SpectralCanvasProAudioProcessor::activateSampleRenderer(const juce::AudioBuffer<float>& sampleData, double sourceSampleRate)
+{
+    juce::Logger::writeToLog("RENDERER: Activating sample renderer: " + 
+                              juce::String(sampleData.getNumChannels()) + " channels, " +
+                              juce::String(sampleData.getNumSamples()) + " samples, " +
+                              juce::String(sourceSampleRate / 1000.0, 1) + "kHz");
+    
+    // Ensure we have valid sample data
+    if (sampleData.getNumSamples() <= 0 || sampleData.getNumChannels() <= 0)
+    {
+        juce::Logger::writeToLog("RENDERER ERROR: Cannot activate renderer with invalid sample data");
+        return false;
+    }
+    
+    // Build spectral model from sample
+    spectralModel.build(sampleData, /*fftOrder*/ 10, /*hop*/ 256);
+    if (!spectralModel.isReady())
+    {
+        juce::Logger::writeToLog("RENDERER ERROR: Failed to build spectral model from sample");
+        return false;
+    }
+    
+    // Initialize spectral mask
+    spectralMask.init(spectralModel.numFrames(), spectralModel.numBins());
+    
+    // Prepare spectral player if audio system is ready
+    if (currentSampleRate > 0 && currentBlockSize > 0)
+    {
+        spectralPlayer.prepare(getSampleRate(), getBlockSize(), &spectralModel, &spectralMask);
+        spectralPlayer.reset();
+        spectralReady = true;
+        
+        juce::Logger::writeToLog("RENDERER: Spectral player prepared: " +
+                                  juce::String(spectralModel.numFrames()) + " frames, " +
+                                  juce::String(spectralModel.numBins()) + " bins");
+    }
+    
+    // Mark renderer as active
+    hasActiveRenderer_.store(true, std::memory_order_release);
+    
+    juce::Logger::writeToLog("RENDERER: Renderer activation successful");
+    return true;
+}
+
+void SpectralCanvasProAudioProcessor::deactivateRenderer()
+{
+    juce::Logger::writeToLog("RENDERER: Deactivating renderer");
+    
+    hasActiveRenderer_.store(false, std::memory_order_release);
+    spectralReady = false;
+    
+    // Reset spectral components
+    spectralPlayer.reset();
+    spectralModel.clear();
+    
+    // Reset spectral mask by reinitializing with zero size
+    spectralMask.init(0, 0);
+    
+    juce::Logger::writeToLog("RENDERER: Renderer deactivated");
 }
 
 void SpectralCanvasProAudioProcessor::generateImmediateAudioFeedback()

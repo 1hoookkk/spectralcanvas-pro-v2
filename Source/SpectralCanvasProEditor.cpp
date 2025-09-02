@@ -1,5 +1,6 @@
 #include "SpectralCanvasProEditor.h"
 #include "Core/Params.h"
+#include "Core/DiagnosticLogger.h"
 #include "Viz/backends/D3D11Renderer.h"
 
 SpectralCanvasProEditor::SpectralCanvasProEditor(SpectralCanvasProAudioProcessor& p)
@@ -9,6 +10,7 @@ SpectralCanvasProEditor::SpectralCanvasProEditor(SpectralCanvasProAudioProcessor
     
     // Canvas component (full-bleed background)
     canvasComponent = std::make_unique<CanvasComponent>(audioProcessor);
+    canvasComponent->setParentEditor(this);
     addAndMakeVisible(*canvasComponent);
     
     // Minimal top strip with essential controls only
@@ -21,6 +23,11 @@ SpectralCanvasProEditor::SpectralCanvasProEditor(SpectralCanvasProAudioProcessor
     renderer->initialize(getTopLevelComponent()->getWindowHandle(), 1200, 800);
 #endif
 
+    // Initialize sample loading infrastructure
+    sampleLoader = std::make_unique<SampleLoaderService>();
+    toastManager = std::make_unique<ToastManager>(*this);
+    addChildComponent(*toastManager); // Hidden by default, shows toasts when needed
+    
     // Phase 5 Performance HUD (initially hidden) - pass renderer for real GPU metrics
     perfHUD = std::make_unique<PerfHUD>(audioProcessor, renderer.get());
     addAndMakeVisible(*perfHUD);
@@ -50,6 +57,10 @@ SpectralCanvasProEditor::SpectralCanvasProEditor(SpectralCanvasProAudioProcessor
 
 SpectralCanvasProEditor::~SpectralCanvasProEditor()
 {
+    // Clean up sample loading infrastructure
+    sampleLoader.reset();
+    toastManager.reset();
+    
     // Ensure renderer shutdown before destruction
     if (renderer) 
         renderer->shutdown();
@@ -86,6 +97,11 @@ void SpectralCanvasProEditor::resized()
     if (perfHUD) {
         const int margin = 10;
         perfHUD->setTopRightPosition(getWidth() - margin, 50);
+    }
+    
+    // Size toast manager to cover entire editor
+    if (toastManager) {
+        toastManager->setBounds(getLocalBounds());
     }
     
     // Hook model/mask if available
@@ -133,29 +149,107 @@ void SpectralCanvasProEditor::parameterChanged(const juce::String& parameterID, 
 
 void SpectralCanvasProEditor::loadSampleButtonClicked()
 {
-    juce::FileChooser fc ("Choose an audio file...", {}, "*.wav;*.aif;*.aiff;*.flac;*.mp3");
-    fc.launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-        [this] (const juce::FileChooser& chooser)
+    juce::Logger::writeToLog("UI: Load Sample button clicked");
+    
+    if (!sampleLoader || !toastManager)
+    {
+        juce::Logger::writeToLog("UI ERROR: Sample loading infrastructure not initialized");
+        return;
+    }
+    
+    // Use centralized sample loader with toast feedback
+    sampleLoader->loadViaChooser(*this, [this](SampleLoaderService::Result result)
+    {
+        if (result.isSuccess() && result.sample)
         {
-            auto result = chooser.getResult();
-            if (result.existsAsFile()) 
+            auto& sample = *result.sample;
+            
+            juce::Logger::writeToLog("UI: Sample load successful: " + sample.filename + 
+                                      " (" + juce::String(sample.durationSeconds, 2) + "s)");
+            
+            // Activate renderer with loaded sample
+            bool rendererActivated = audioProcessor.activateSampleRenderer(sample.audio, sample.sampleRate);
+            
+            if (rendererActivated)
             {
-                if (audioProcessor.loadSampleFile (result))
-                {
-                    // Successfully loaded - switch to spectral path and show spectrogram
-                    spectrogram.setModel(&audioProcessor.getSpectralModel());
-                    spectrogram.setEditableMask(&audioProcessor.getSpectralMask());
-                    spectrogram.repaint();
-                }
-                else
-                {
-                    // Failed to load - show error
-                    juce::AlertWindow::showMessageBoxAsync(
-                        juce::AlertWindow::WarningIcon,
-                        "Load Error",
-                        "Could not load audio file: " + result.getFileName() + 
-                        "\nSupported formats: WAV, AIFF, FLAC, MP3");
-                }
+                // Update UI to show loaded sample
+                spectrogram.setModel(&audioProcessor.getSpectralModel());
+                spectrogram.setEditableMask(&audioProcessor.getSpectralMask());
+                spectrogram.repaint();
+                
+                // Show success toast
+                toastManager->showSuccess(
+                    "Loaded: " + sample.filename + " (" + 
+                    juce::String(sample.durationSeconds, 1) + "s)");
+                
+                juce::Logger::writeToLog("RENDERER: Sample renderer activated successfully");
             }
-        });
+            else
+            {
+                toastManager->showError("Sample loaded but renderer activation failed");
+                juce::Logger::writeToLog("RENDERER ERROR: Failed to activate renderer after successful sample load");
+            }
+        }
+        else
+        {
+            // Handle various error cases with appropriate toasts
+            if (result.code != SampleLoaderService::ErrorCode::FileDialogCancelled)
+            {
+                toastManager->showError(result.errorMessage);
+                juce::Logger::writeToLog("LOADER ERROR: Sample load failed: " + result.errorMessage);
+            }
+        }
+    });
+}
+
+void SpectralCanvasProEditor::loadAudioFile(const juce::File& file)
+{
+    juce::Logger::writeToLog("UI: Loading audio file: " + file.getFullPathName());
+    
+    if (!sampleLoader || !toastManager)
+    {
+        juce::Logger::writeToLog("UI ERROR: Sample loading infrastructure not initialized");
+        return;
+    }
+    
+    // Use centralized sample loader
+    sampleLoader->loadFromFile(file, [this](SampleLoaderService::Result result)
+    {
+        if (result.isSuccess() && result.sample)
+        {
+            auto& sample = *result.sample;
+            
+            juce::Logger::writeToLog("UI: Drag-and-drop load successful: " + sample.filename + 
+                                      " (" + juce::String(sample.durationSeconds, 2) + "s)");
+            
+            // Activate renderer with loaded sample
+            bool rendererActivated = audioProcessor.activateSampleRenderer(sample.audio, sample.sampleRate);
+            
+            if (rendererActivated)
+            {
+                // Update UI to show loaded sample
+                spectrogram.setModel(&audioProcessor.getSpectralModel());
+                spectrogram.setEditableMask(&audioProcessor.getSpectralMask());
+                spectrogram.repaint();
+                
+                // Show success toast
+                toastManager->showSuccess(
+                    "Dropped: " + sample.filename + " (" + 
+                    juce::String(sample.durationSeconds, 1) + "s)");
+                
+                juce::Logger::writeToLog("RENDERER: Sample renderer activated via drag-and-drop");
+            }
+            else
+            {
+                toastManager->showError("Sample loaded but renderer activation failed");
+                juce::Logger::writeToLog("RENDERER ERROR: Failed to activate renderer after drag-and-drop load");
+            }
+        }
+        else
+        {
+            // Show error toast for failed loads
+            toastManager->showError(result.errorMessage);
+            juce::Logger::writeToLog("LOADER ERROR: Drag-and-drop load failed: " + result.errorMessage);
+        }
+    });
 }

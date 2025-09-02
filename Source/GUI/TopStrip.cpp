@@ -1,5 +1,7 @@
 #include "TopStrip.h"
 #include "CanvasComponent.h"
+#include "../Core/DiagnosticLogger.h"
+#include "../SpectralCanvasProEditor.h"
 
 TopStrip::TopStrip(SpectralCanvasProAudioProcessor& processor, CanvasComponent& canvas)
     : audioProcessor(processor), canvasComponent(canvas)
@@ -357,46 +359,80 @@ void TopStrip::updateControlStates()
 
 void TopStrip::loadSampleFile()
 {
-    auto chooser = std::make_shared<juce::FileChooser>("Load Audio Sample",
-                                                       juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
-                                                       "*.wav;*.aiff;*.flac;*.mp3");
+    LOGI(UI, "TopStrip Load Sample clicked");
     
-    chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-        [this, chooser](const juce::FileChooser& fc)
+    // Get parent editor through canvas component
+    if (auto* editor = dynamic_cast<SpectralCanvasProEditor*>(canvasComponent.getParentEditor()))
+    {
+        // Use the editor's centralized sample loading with custom success callback for TopStrip UI
+        auto* sampleLoader = editor->getSampleLoader();
+        auto* toastManager = editor->getToastManager();
+        
+        if (sampleLoader && toastManager)
         {
-            if (auto selectedFile = fc.getResult(); selectedFile.existsAsFile())
+            sampleLoader->loadViaChooser(*this, [this, toastManager](SampleLoaderService::Result result)
             {
-                juce::Logger::writeToLog("Loading sample: " + selectedFile.getFullPathName());
-                
-                // Load sample through audio processor (UI thread safe)
-                bool loadSuccess = audioProcessor.loadSampleFile(selectedFile);
-                
-                // Update UI on message thread
-                juce::MessageManager::callAsync([this, selectedFile, loadSuccess]()
+                if (result.isSuccess() && result.sample)
                 {
-                    if (loadSuccess)
-                    {
-                        loadedSampleLabel.setText(selectedFile.getFileNameWithoutExtension(), 
-                                                 juce::dontSendNotification);
-                        loadedSampleLabel.setColour(juce::Label::textColourId, juce::Colours::lightgreen);
-                        
-                        // Switch to Resynth mode
-                        modeSelector->setSelectedId(2, juce::sendNotificationSync);
-                        
-                        juce::Logger::writeToLog("Sample loaded successfully: " + 
-                                                 juce::String(audioProcessor.getSampleLoader().getNumSpectralFrames()) + 
-                                                 " spectral frames");
-                    }
-                    else
+                    auto& sample = *result.sample;
+                    
+                    // Update TopStrip UI
+                    loadedSampleLabel.setText(sample.filename, juce::dontSendNotification);
+                    loadedSampleLabel.setColour(juce::Label::textColourId, juce::Colours::lightgreen);
+                    
+                    // Switch to Resynth mode
+                    modeSelector->setSelectedId(2, juce::sendNotificationSync);
+                    
+                    LOGI(UI, "TopStrip updated for loaded sample: %s", sample.filename.toRawUTF8());
+                }
+                else
+                {
+                    // Update TopStrip UI for failure
+                    if (result.code != SampleLoaderService::ErrorCode::FileDialogCancelled)
                     {
                         loadedSampleLabel.setText("Load failed!", juce::dontSendNotification);
                         loadedSampleLabel.setColour(juce::Label::textColourId, juce::Colours::red);
-                        
-                        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-                                                               "Sample Load Error",
-                                                               "Could not load the selected audio file. Please check the file format and try again.");
                     }
-                });
-            }
-        });
+                }
+            });
+        }
+        else
+        {
+            LOGE(UI, "Cannot access sample loader from TopStrip");
+        }
+    }
+    else
+    {
+        LOGE(UI, "Cannot access parent editor from TopStrip - falling back to legacy method");
+        
+        // Fallback to old method (should be rare)
+        auto chooser = std::make_shared<juce::FileChooser>("Load Audio Sample",
+                                                           juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
+                                                           "*.wav;*.aiff;*.flac;*.mp3");
+        
+        chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+            [this, chooser](const juce::FileChooser& fc)
+            {
+                if (auto selectedFile = fc.getResult(); selectedFile.existsAsFile())
+                {
+                    bool loadSuccess = audioProcessor.loadSampleFile(selectedFile);
+                    
+                    juce::MessageManager::callAsync([this, selectedFile, loadSuccess]()
+                    {
+                        if (loadSuccess)
+                        {
+                            loadedSampleLabel.setText(selectedFile.getFileNameWithoutExtension(), 
+                                                     juce::dontSendNotification);
+                            loadedSampleLabel.setColour(juce::Label::textColourId, juce::Colours::lightgreen);
+                            modeSelector->setSelectedId(2, juce::sendNotificationSync);
+                        }
+                        else
+                        {
+                            loadedSampleLabel.setText("Load failed!", juce::dontSendNotification);
+                            loadedSampleLabel.setColour(juce::Label::textColourId, juce::Colours::red);
+                        }
+                    });
+                }
+            });
+    }
 }

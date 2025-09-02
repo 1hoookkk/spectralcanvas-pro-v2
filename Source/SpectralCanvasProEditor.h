@@ -6,6 +6,8 @@
 #include "GUI/MinimalTopStrip.h"
 #include "GUI/PerfHUD.h"
 #include "GUI/SpectrogramComponent.h"
+#include "GUI/ToastManager.h"
+#include "Core/SampleLoaderService.h"
 #include "Viz/GpuRenderer.h"
 
 /**
@@ -31,8 +33,13 @@ public:
     // Parameter listener for HUD toggle
     void parameterChanged(const juce::String& parameterID, float newValue) override;
     
-    // Sample loading callback
+    // Sample loading callbacks
     void loadSampleButtonClicked();
+    void loadAudioFile(const juce::File& file);
+    
+    // Access to loading infrastructure for other components
+    SampleLoaderService* getSampleLoader() const { return sampleLoader.get(); }
+    ToastManager* getToastManager() const { return toastManager.get(); }
 
 private:
     SpectralCanvasProAudioProcessor& audioProcessor;
@@ -50,6 +57,10 @@ private:
     
     // GPU renderer
     std::unique_ptr<GpuRenderer> renderer;
+    
+    // Sample loading infrastructure
+    std::unique_ptr<SampleLoaderService> sampleLoader;
+    std::unique_ptr<ToastManager> toastManager;
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectralCanvasProEditor)
 };

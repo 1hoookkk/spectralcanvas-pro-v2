@@ -57,6 +57,10 @@ target_sources(SpectralCanvasPro PRIVATE
     Source/Core/ColorToSpectralMapper.cpp
     Source/Core/AtomicOscillator.h
     Source/Core/AtomicOscillator.cpp
+    Source/Core/DiagnosticLogger.h
+    Source/Core/DiagnosticLogger.cpp
+    Source/Core/SampleLoaderService.h
+    Source/Core/SampleLoaderService.cpp
     
     # RT Infrastructure
     Source/rt/MaskColumnLite.h
@@ -95,6 +99,8 @@ target_sources(SpectralCanvasPro PRIVATE
     Source/GUI/SpectrogramComponent.h
     Source/GUI/SpectrogramComponent.cpp
     Source/GUI/HudFormatter.h
+    Source/GUI/ToastManager.h
+    Source/GUI/ToastManager.cpp
     
     # Spectral Pipeline (MVP)
     Source/Audio/SampleManager.h
@@ -131,6 +137,7 @@ target_compile_definitions(SpectralCanvasPro
       JUCE_VST3_CAN_REPLACE_VST2=0
       JUCE_STRICT_REFCOUNTEDPOINTER=1
       PHASE4_EXPERIMENT=1
+      JUCE_USE_MP3AUDIOFORMAT=1
 )
 
 # GPU resilience feature flag
@@ -143,6 +150,16 @@ endif()
 option(DISABLE_PERF_HUD "Disable Performance HUD overlay" OFF)
 if(DISABLE_PERF_HUD)
     target_compile_definitions(SpectralCanvasPro PRIVATE DISABLE_PERF_HUD=1)
+endif()
+
+# MP3 support option
+option(SPECTRAL_ENABLE_MP3 "Enable MP3 support via platform codecs" ON)
+if(SPECTRAL_ENABLE_MP3)
+    target_compile_definitions(SpectralCanvasPro PRIVATE SPECTRAL_ENABLE_MP3=1)
+    if(WIN32)
+        # Enable Windows Media Foundation for MP3 decoding
+        target_compile_definitions(SpectralCanvasPro PRIVATE JUCE_USE_WINDOWS_MEDIA_FOUNDATION=1)
+    endif()
 endif()
 
 # Windows-specific defines

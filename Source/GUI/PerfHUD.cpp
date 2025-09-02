@@ -189,13 +189,13 @@ PerfHUD::Metrics PerfHUD::sampleMetrics() noexcept
             metrics.gpuFrameTimeUs = static_cast<uint32_t>(gpuRenderer_->getFrameTime() * 1000.0f);
             metrics.gpuPeakFrameUs = metrics.gpuFrameTimeUs; // TODO: track peak separately
             metrics.isWarpMode = false; // TODO: query from D3D11Renderer
-            metrics.deviceOk = gpuRenderer_->checkDeviceStatus();
+            metrics.deviceOk = gpuRenderer_->checkDeviceStatus() && audioProcessor_.hasActiveRenderer();
         } else {
             // No renderer or not initialized
             metrics.gpuFrameTimeUs = 0;
             metrics.gpuPeakFrameUs = 0;
             metrics.isWarpMode = false;
-            metrics.deviceOk = false;
+            metrics.deviceOk = audioProcessor_.hasActiveRenderer();
         }
         metrics.recoveryCount = 0;
         metrics.lastRecoveryTimestamp = 0;

@@ -1,6 +1,9 @@
 #include "CanvasComponent.h"
 #include "../Core/Params.h"
 #include "../Core/MessageBus.h"
+#include "../Core/DiagnosticLogger.h"
+#include "../Core/SampleLoaderService.h"
+#include "../SpectralCanvasProEditor.h"
 #include <chrono>
 
 // Constants for RT-safe paint-to-sound
@@ -294,10 +297,22 @@ void CanvasComponent::mouseWheelMove(const juce::MouseEvent& e, const juce::Mous
 
 bool CanvasComponent::isInterestedInFileDrag(const juce::StringArray& files)
 {
+    // Check if any file has a supported audio extension
     for (const auto& file : files)
     {
-        if (file.endsWithIgnoreCase(".wav") || file.endsWithIgnoreCase(".aiff"))
+        if (file.endsWithIgnoreCase(".wav") || file.endsWithIgnoreCase(".aiff") || 
+            file.endsWithIgnoreCase(".aif") || file.endsWithIgnoreCase(".flac") || 
+            file.endsWithIgnoreCase(".ogg"))
+        {
             return true;
+        }
+        
+#ifdef SPECTRAL_ENABLE_MP3
+        if (file.endsWithIgnoreCase(".mp3"))
+        {
+            return true;
+        }
+#endif
     }
     return false;
 }
@@ -317,11 +332,53 @@ void CanvasComponent::fileDragExit(const juce::StringArray&)
 void CanvasComponent::filesDropped(const juce::StringArray& files, int, int)
 {
     isFileDragOver = false;
-    if (files.size() > 0)
-    {
-        juce::Logger::writeToLog("Loading: " + files[0]);
-    }
     repaint();
+    
+    if (files.isEmpty())
+    {
+        LOGW(UI, "filesDropped called with empty file list");
+        return;
+    }
+    
+    // Find first supported audio file
+    juce::File audioFile;
+    for (const auto& filePath : files)
+    {
+        juce::File file(filePath);
+        if (file.existsAsFile())
+        {
+            auto extension = file.getFileExtension().toLowerCase();
+            if (extension == ".wav" || extension == ".aiff" || extension == ".aif" || 
+                extension == ".flac" || extension == ".ogg"
+#ifdef SPECTRAL_ENABLE_MP3
+                || extension == ".mp3"
+#endif
+                )
+            {
+                audioFile = file;
+                break;
+            }
+        }
+    }
+    
+    if (!audioFile.exists())
+    {
+        LOGI(UI, "No supported audio files found in drag-and-drop");
+        return;
+    }
+    
+    LOGI(UI, "Audio file dropped: %s", audioFile.getFullPathName().toRawUTF8());
+    
+    // Get parent editor to access sample loader and toast manager
+    if (auto* editor = dynamic_cast<SpectralCanvasProEditor*>(parentEditor_))
+    {
+        // Use the editor's sample loading infrastructure
+        editor->loadAudioFile(audioFile);
+    }
+    else
+    {
+        LOGE(UI, "Cannot access parent editor for drag-and-drop loading");
+    }
 }
 
 void CanvasComponent::timerCallback()

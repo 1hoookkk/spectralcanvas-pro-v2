@@ -61,6 +61,10 @@ public:
     // Modern paint support
     void pushPaintEvent(float y, float intensity);
     
+    // Editor access for drag-and-drop
+    void setParentEditor(juce::Component* editor) { parentEditor_ = editor; }
+    juce::Component* getParentEditor() const { return parentEditor_; }
+    
 private:
     SpectralCanvasProAudioProcessor& audioProcessor;
     
@@ -95,6 +99,7 @@ private:
     bool isDragging = false;
     bool isFileDragOver = false;
     juce::Point<float> lastMousePos;
+    juce::Component* parentEditor_ = nullptr;
     
     // Visual settings
     bool gridVisible = false;

@@ -128,6 +128,11 @@ public:
     // Sample loading API (called from Editor)
     bool loadSampleFile (const juce::File& f);
     
+    // Renderer activation API for sample loading pipeline
+    bool hasActiveRenderer() const noexcept;
+    bool activateSampleRenderer(const juce::AudioBuffer<float>& sampleData, double sourceSampleRate);
+    void deactivateRenderer();
+    
     // Spectral pipeline access for editor
     SpectralModel& getSpectralModel() { return spectralModel; }
     SpectralMask& getSpectralMask() { return spectralMask; }
@@ -268,6 +273,9 @@ private:
     SpectralMask   spectralMask;
     SpectralPlayer spectralPlayer;
     bool           spectralReady { false };
+    
+    // Renderer activation state for HUD
+    std::atomic<bool> hasActiveRenderer_{ false };
     
     // RT-safe parameter smoothers for fast-changing controls
     juce::SmoothedValue<float> oscGainSmoother_;

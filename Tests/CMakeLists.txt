@@ -15,8 +15,23 @@ add_executable(SpectralPaintNodeTest
     ../Source/nodes/SpectralPaintNode.cpp
 )
 
+# Test executable: Sample Loading Pipeline validation
+add_executable(SampleLoadTest
+    SampleLoadTest.cpp
+    ../Source/Core/SampleLoaderService.cpp
+    ../Source/Core/DiagnosticLogger.cpp
+    ../Source/SpectralCanvasProAudioProcessor.cpp
+    ../Source/Audio/SampleManager.cpp
+    ../Source/DSP/SpectralModel.cpp
+    ../Source/DSP/SpectralPlayer.cpp
+    ../Source/DSP/SampleLoader.cpp
+    ../Source/Core/ColorToSpectralMapper.cpp
+    ../Source/Core/AtomicOscillator.cpp
+)
+
 target_compile_features(RTSafetyTest PRIVATE cxx_std_20)
 target_compile_features(SpectralPaintNodeTest PRIVATE cxx_std_20)
+target_compile_features(SampleLoadTest PRIVATE cxx_std_20)
 
 target_link_libraries(RTSafetyTest PRIVATE
     juce::juce_audio_utils
@@ -28,6 +43,13 @@ target_link_libraries(SpectralPaintNodeTest PRIVATE
     juce::juce_dsp
     gtest
     gtest_main
+)
+
+target_link_libraries(SampleLoadTest PRIVATE
+    juce::juce_audio_utils
+    juce::juce_audio_formats
+    juce::juce_dsp
+    juce::juce_gui_basics
 )
 
 # Test executable: ProcessBlock validation  
@@ -96,6 +118,8 @@ endif()
 
 # Include source directories for testing
 target_include_directories(RTSafetyTest PRIVATE "../Source")
+target_include_directories(SpectralPaintNodeTest PRIVATE "../Source")
+target_include_directories(SampleLoadTest PRIVATE "../Source")
 target_include_directories(ProcessBlockTest PRIVATE "../Source")  
 target_include_directories(QueueTest PRIVATE "../Source")
 target_include_directories(PerfHarness PRIVATE "../Source")
@@ -104,12 +128,16 @@ target_include_directories(GPUResilienceTest PRIVATE "../Source")
 # Compiler flags for testing
 if(MSVC)
     target_compile_options(RTSafetyTest PRIVATE /W4)
+    target_compile_options(SpectralPaintNodeTest PRIVATE /W4)
+    target_compile_options(SampleLoadTest PRIVATE /W4)
     target_compile_options(ProcessBlockTest PRIVATE /W4)
     target_compile_options(QueueTest PRIVATE /W4)
     target_compile_options(PerfHarness PRIVATE /W4)
     target_compile_options(GPUResilienceTest PRIVATE /W4)
 else()
     target_compile_options(RTSafetyTest PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(SpectralPaintNodeTest PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(SampleLoadTest PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(ProcessBlockTest PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(QueueTest PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(PerfHarness PRIVATE -Wall -Wextra -Wpedantic)
@@ -118,6 +146,7 @@ endif()
 
 # Define tests for CTest
 add_test(NAME RTSafety COMMAND RTSafetyTest)
+add_test(NAME SampleLoading COMMAND SampleLoadTest)
 add_test(NAME ProcessBlockValidation COMMAND ProcessBlockTest --latency-target 5.0 --cpu-target 15.0)
 add_test(NAME QueueValidation COMMAND QueueTest)
 add_test(NAME PerformanceBaseline COMMAND PerfHarness --baseline)
@@ -128,6 +157,11 @@ add_test(NAME GPUResilience COMMAND GPUResilienceTest)
 set_tests_properties(RTSafety PROPERTIES
     TIMEOUT 30
     LABELS "rt-safety;validation"
+)
+
+set_tests_properties(SampleLoading PROPERTIES
+    TIMEOUT 30
+    LABELS "sample-loading;validation"
 )
 
 set_tests_properties(ProcessBlockValidation PROPERTIES  
