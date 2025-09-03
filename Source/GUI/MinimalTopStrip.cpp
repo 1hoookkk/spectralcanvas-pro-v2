@@ -3,6 +3,20 @@
 MinimalTopStrip::MinimalTopStrip(juce::AudioProcessorValueTreeState& apvts)
     : apvts(apvts)
 {
+    // Mode Combo (0=Synth, 1=Resynth, 2=Hybrid)
+    modeCombo.addItem("Synth", 1);
+    modeCombo.addItem("Resynth", 2);
+    modeCombo.addItem("Hybrid", 3);
+    modeCombo.setJustificationType(juce::Justification::centredLeft);
+    setupControl(modeCombo, modeLabel, "Mode");
+
+    // Blend Slider (0..1), only meaningful in Hybrid mode
+    blendSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    blendSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 50, 20);
+    blendSlider.setRange(0.0, 1.0, 0.01);
+    blendSlider.setValue(0.0); // 0=synth only, 1=resynth only
+    setupControl(blendSlider, blendLabel, "Blend");
+
     // Test Mode Toggle
     testToggleButton.setButtonText("START");
     testToggleButton.setColour(juce::ToggleButton::textColourId, juce::Colours::white);
@@ -30,8 +44,14 @@ MinimalTopStrip::MinimalTopStrip(juce::AudioProcessorValueTreeState& apvts)
     debugToggleButton.setButtonText("Debug");
     debugToggleButton.setColour(juce::ToggleButton::textColourId, juce::Colours::white);
     setupControl(debugToggleButton, debugLabel, "Debug Overlay");
-    
+
     // Parameter attachments
+    modeAttachment = std::make_unique<juce::ComboBoxParameterAttachment>(
+        *apvts.getParameter(Params::ParameterIDs::mode), modeCombo);
+
+    blendAttachment = std::make_unique<juce::SliderParameterAttachment>(
+        *apvts.getParameter(Params::ParameterIDs::blend), blendSlider);
+
     testToggleAttachment = std::make_unique<juce::ButtonParameterAttachment>(
         *apvts.getParameter(Params::ParameterIDs::useTestFeeder), testToggleButton);
     
@@ -58,15 +78,24 @@ void MinimalTopStrip::paint(juce::Graphics& g)
 void MinimalTopStrip::resized()
 {
     auto bounds = getLocalBounds().reduced(8, 4);
-    int controlWidth = bounds.getWidth() / 4;
-    
-    // Layout controls horizontally: Test | MaskDepth | BrushStrength | Debug
+    // 6 groups: Mode | Blend | Test | MaskDepth | BrushStrength | Debug
+    int controlWidth = bounds.getWidth() / 6;
+
+    // Layout controls horizontally: Mode | Blend | Test | MaskDepth | BrushStrength | Debug
+    auto modeArea = bounds.removeFromLeft(controlWidth);
+    auto blendArea = bounds.removeFromLeft(controlWidth);
     auto testArea = bounds.removeFromLeft(controlWidth);
     auto maskArea = bounds.removeFromLeft(controlWidth);
-    auto strengthArea = bounds.removeFromLeft(controlWidth); 
-    auto debugArea = bounds;
-    
+    auto strengthArea = bounds.removeFromLeft(controlWidth);
+    auto debugArea = bounds; // last slot uses remainder
+
     // Each area: label on top, control below
+    modeLabel.setBounds(modeArea.removeFromTop(16));
+    modeCombo.setBounds(modeArea.reduced(4));
+
+    blendLabel.setBounds(blendArea.removeFromTop(16));
+    blendSlider.setBounds(blendArea.reduced(4));
+
     testLabel.setBounds(testArea.removeFromTop(16));
     testToggleButton.setBounds(testArea.reduced(4));
     

@@ -12,6 +12,7 @@
 #include "Core/LatencyTracker.h"
 #include "Core/Phase4DebugTap.h"
 #include "Core/RealtimeMemoryManager.h"
+#include "Core/AtlasIds.h"
 #include "DSP/SpectralEngine.h"
 #include "DSP/SampleLoader.h"
 #include "DSP/MaskTestFeeder.h"
@@ -53,7 +54,7 @@ public:
     bool hasEditor() const override { return true; }
     
     const juce::String getName() const override { return JucePlugin_Name; }
-    bool acceptsMidi() const override { return false; }
+    bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
@@ -84,6 +85,10 @@ public:
     // Phase 2-3 debug info getters
     int getBlockSize() const;
     double getSampleRate() const;
+    
+    // Helpers for Editor wiring
+    static constexpr int getFftSize() noexcept { return AtlasConfig::FFT_SIZE; }
+    static constexpr int getHopSize() noexcept { return AtlasConfig::HOP_SIZE; }
     
     // Phase 2-3 validation metrics (UI thread access)
     struct PerformanceMetrics
@@ -349,6 +354,11 @@ public:
     PageManagementQueue& getPageManagementQueue() noexcept { return pageManagementQueue; }
     OfflineStftAnalyzer* getOfflineAnalyzer() const noexcept { return offlineAnalyzer_.get(); }
     
+    // Phase 1: Current column tracking for UI synchronization
+    uint32_t getCurrentColumnIndex() const noexcept { return currentColumnIndex_.load(std::memory_order_relaxed); }
+    
 private:
+    // Current processing position (Phase 1 completion)
+    std::atomic<uint32_t> currentColumnIndex_{0};
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectralCanvasProAudioProcessor)
 };

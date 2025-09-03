@@ -27,6 +27,11 @@ struct MaskColumnDelta {
     }
 };
 
+// Compile-time guard: enforce column length == NUM_BINS
+static_assert(sizeof(MaskColumnDelta::values) ==
+              sizeof(float) * AtlasConfig::NUM_BINS,
+              "MaskColumnDelta::values must be NUM_BINS floats");
+
 // Atlas page management messages
 struct AtlasPageMessage {
     enum Type : uint8_t {

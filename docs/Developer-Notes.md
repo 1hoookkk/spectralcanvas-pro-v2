@@ -49,14 +49,14 @@ build/Tests/ProcessBlockTest --samples 48000 --buffer-size 64
 
 ### GPU Validation Commands:
 ```bash
-# Test device-lost recovery
+# Test device-lost recovery (present)
 build/Tests/GPUResilienceTest --simulate-device-lost
 
-# Profile GPU frame times  
-build/Tests/GPUProfilerTest --resolution 1920x1080 --duration 30s
+# Profile GPU frame times (planned)
+# build/Tests/GPUProfilerTest --resolution 1920x1080 --duration 30s
 
-# Validate WARP fallback
-build/Tests/WarpFallbackTest --force-software-rendering
+# Validate WARP fallback (planned)
+# build/Tests/WarpFallbackTest --force-software-rendering
 ```
 
 ## Performance Targets 🎯

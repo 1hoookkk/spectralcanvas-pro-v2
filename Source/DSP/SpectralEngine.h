@@ -4,6 +4,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "../Core/RealtimeSafeTypes.h"
 #include "../Core/MessageBus.h"
+#include "../Core/AtlasIds.h"
 
 // Forward declaration
 class SampleLoader;
@@ -53,6 +54,9 @@ public:
     void updateCurrentMask(const MaskColumn* maskColumn) noexcept;
     void updateCurrentMask(const float* maskPtr, int numBins) noexcept;
     void applyMaskColumn(const MaskColumn& maskColumn) noexcept;
+    
+    // Atlas-based mask processing (RT-safe, bounded to ≤16 updates per call)
+    void processAtlasUpdates(AtlasUpdateQueue& atlasQueue) noexcept;
     
     // State queries (RT-safe)
     bool isInitialized() const noexcept { return initialized_.load(std::memory_order_acquire); }
@@ -115,4 +119,11 @@ private:
     // Spectral analysis
     std::atomic<float> spectralCentroid_;
     std::atomic<float> fundamentalFreq_;
+    
+    // Atlas update processing (RT-safe)
+    std::atomic<uint32_t> atlasUpdatesProcessed_{0};
+    std::atomic<uint32_t> atlasUpdatesDropped_{0};
+    AlignedStorage<std::array<float, NUM_BINS>> atlasActiveMask_;  // Active mask buffer
+    AlignedStorage<std::array<float, NUM_BINS>> atlasStagingMask_; // Staging mask buffer
+    std::atomic<bool> hasMaskUpdates_{false};
 };

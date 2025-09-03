@@ -1,5 +1,7 @@
 # SpectralCanvas Pro v2 - Technical Architecture Blueprint
 
+Note on scope and status: This blueprint includes planned components. The current implementation focuses on JUCE + Direct3D 11 (no OpenGL renderer yet). Shader sources exist under `Source/Viz/shaders/` but are not compiled/packaged via CMake. Some DSP modules (e.g., Z-plane filter, tube saturation) are planned and not yet implemented. See `docs/DOC_CODE_AUDIT.md` for a living list of discrepancies and next steps.
+
 ## Project Vision
 Revolutionary spectral manipulation synthesizer combining real-time STFT processing with EMU Audity-style Z-plane filter morphing. Users reshape a "living nebula of sound" using liquid-light painting gestures while GPU-accelerated particles provide 60fps visual feedback.
 

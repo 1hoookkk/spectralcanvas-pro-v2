@@ -5,6 +5,7 @@
 #include <memory>
 #include <array>
 #include "RealtimeSafeTypes.h"
+#include "AtlasIds.h"
 
 /**
  * ReconfigManager - Safe FFT/hop/latency reconfiguration system
@@ -217,8 +218,9 @@ public:
     // Get latency samples for current configuration
     int getCurrentLatencySamples() const noexcept
     {
-        // Typical STFT latency is hop size + processing delay
-        return currentConfig_.hopSize + (currentConfig_.getFFTSizeInt() / 4);
+        // Use single-source-of-truth constants to match prepareToPlay()
+        // STFT overlap-add reconstruction delay
+        return AtlasConfig::FFT_SIZE - AtlasConfig::HOP_SIZE; // e.g. 512-128 = 384
     }
     
 private:

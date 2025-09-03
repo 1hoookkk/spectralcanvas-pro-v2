@@ -23,26 +23,32 @@ public:
     
 private:
     juce::AudioProcessorValueTreeState& apvts;
-    
+
     // Phase 2 Required Controls
+    juce::ComboBox modeCombo;
+    juce::Slider blendSlider;
     juce::ToggleButton testToggleButton;
     juce::Slider maskDepthSlider;
     juce::Slider brushStrengthSlider;
     juce::ToggleButton debugToggleButton;
-    
+
     // Labels (minimal styling)
+    juce::Label modeLabel;
+    juce::Label blendLabel;
     juce::Label testLabel;
     juce::Label maskDepthLabel;
     juce::Label brushStrengthLabel; 
     juce::Label debugLabel;
-    
+
     // Parameter attachments
+    std::unique_ptr<juce::ComboBoxParameterAttachment> modeAttachment;
+    std::unique_ptr<juce::SliderParameterAttachment> blendAttachment;
     std::unique_ptr<juce::ButtonParameterAttachment> testToggleAttachment;
     std::unique_ptr<juce::SliderParameterAttachment> maskDepthAttachment;
     std::unique_ptr<juce::SliderParameterAttachment> brushStrengthAttachment;
     std::unique_ptr<juce::ButtonParameterAttachment> debugToggleAttachment;
-    
+
     void setupControl(juce::Component& control, juce::Label& label, const juce::String& text);
-    
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MinimalTopStrip)
 };

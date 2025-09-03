@@ -1,0 +1,65 @@
+name: Plugin Validation
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v1.3
+      
+    - name: Configure CMake
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTS=OFF
+      
+    - name: Build Plugin
+      run: cmake --build build --config Release --target SpectralCanvasPro_VST3 -- /m:8
+      
+    - name: Run Basic Validation
+      run: |
+        build/pluginval.exe --strictness-level 5 --skip-gui-tests --timeout-ms 30000 build/SpectralCanvasPro_artefacts/Release/VST3/SpectralCanvasPro.vst3
+        
+    - name: Run RT Safety Tests
+      run: build/Tests/Release/RTSafetyTest.exe
+      
+    - name: Upload Plugin Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: SpectralCanvasPro-VST3-Windows
+        path: build/SpectralCanvasPro_artefacts/Release/VST3/SpectralCanvasPro.vst3
+        
+  validate-performance:
+    runs-on: windows-latest
+    needs: validate-windows
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        
+    - name: Setup MSBuild  
+      uses: microsoft/setup-msbuild@v1.3
+      
+    - name: Configure CMake
+      run: cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_TESTS=ON
+      
+    - name: Build with Tests
+      run: cmake --build build --config RelWithDebInfo --target SpectralCanvasPro_VST3 RTSafetyTest PerfHarness -- /m:8
+      
+    - name: Run Performance Harness
+      run: build/Tests/RelWithDebInfo/PerfHarness.exe
+      
+    - name: Upload Performance Results
+      uses: actions/upload-artifact@v3  
+      with:
+        name: performance-results
+        path: build/perf-results.txt

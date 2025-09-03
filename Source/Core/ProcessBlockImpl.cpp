@@ -200,8 +200,8 @@ void SpectralCanvasProAudioProcessor::prepareToPlay(double sampleRate, int sampl
         coreEngine->prepare(config);
     }
     
-    // Set latency based on current configuration
-    setLatencySamples(reconfigManager.getCurrentLatencySamples());
+    // Note: Latency is set once in prepareToPlay() using AtlasConfig constants
+    // No need to override here - avoids duplicate calls and potential races
     
     // Initialize legacy engines for compatibility
     if (!spectralEngine)

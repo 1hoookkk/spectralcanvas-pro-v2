@@ -16,10 +16,17 @@ FetchContent_Declare(juce
 )
 FetchContent_MakeAvailable(juce)
 
+# Option: copy shader assets next to built binaries (Standalone/VST3)
+option(SCP_INSTALL_SHADERS "Copy HLSL shaders alongside built binaries" ON)
+
 juce_add_plugin(SpectralCanvasPro
     COMPANY_NAME "SpectralCanvas"
     VERSION "0.1.0"
-    IS_SYNTH TRUE
+    IS_SYNTH FALSE
+    NEEDS_MIDI_INPUT TRUE
+    NEEDS_MIDI_OUTPUT FALSE
+    IS_MIDI_EFFECT FALSE
+    VST3_CATEGORIES "Fx|Analyzer"
     PLUGIN_CODE Scp1
     FORMATS VST3 Standalone
     PRODUCT_NAME "SpectralCanvasPro"
@@ -55,6 +62,9 @@ target_sources(SpectralCanvasPro PRIVATE
     Source/Core/SpectralFrame.h
     Source/Core/TimeUtils.h
     Source/Core/PlatformTimeUtils.h
+    Source/Core/AtlasIds.h
+    Source/Core/TiledAtlas.h
+    Source/Core/TiledAtlas.cpp
     Source/Core/ColorToSpectralMapper.h
     Source/Core/ColorToSpectralMapper.cpp
     Source/Core/AtomicOscillator.h
@@ -83,6 +93,10 @@ target_sources(SpectralCanvasPro PRIVATE
     Source/DSP/KeyFilter.cpp
     Source/DSP/SpectralEngineStub.h
     Source/DSP/SpectralEngineStub.cpp
+    Source/DSP/OfflineStftAnalyzer.h
+    Source/DSP/OfflineStftAnalyzer.cpp
+    Source/DSP/HopScheduler.h
+    Source/DSP/HopScheduler.cpp
     Source/DSP/SpscRingBuffer.h
     
     # GUI components
@@ -100,6 +114,8 @@ target_sources(SpectralCanvasPro PRIVATE
     Source/GUI/PerfHUD.cpp
     Source/GUI/SpectrogramComponent.h
     Source/GUI/SpectrogramComponent.cpp
+    Source/GUI/BrushTools.h
+    Source/GUI/BrushTools.cpp
     Source/GUI/HudFormatter.h
     Source/GUI/ToastManager.h
     Source/GUI/ToastManager.cpp
@@ -189,6 +205,28 @@ if(WIN32)
         dxgi.lib
         d3dcompiler.lib
     )
+endif()
+
+# Post-build: stage HLSL shader assets next to binaries
+if (SCP_INSTALL_SHADERS)
+  add_custom_command(TARGET SpectralCanvasPro POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E echo "Staging shaders to $<TARGET_FILE_DIR:SpectralCanvasPro>/shaders"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:SpectralCanvasPro>/shaders"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/Source/Viz/shaders"
+            "$<TARGET_FILE_DIR:SpectralCanvasPro>/shaders"
+  )
+endif()
+# Optional: install/copy HLSL shaders next to built binaries
+option(SCP_INSTALL_SHADERS "Copy HLSL shaders alongside binaries" ON)
+if(SCP_INSTALL_SHADERS)
+    add_custom_command(TARGET SpectralCanvasPro POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:SpectralCanvasPro>/shaders"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/Source/Viz/shaders"
+                "$<TARGET_FILE_DIR:SpectralCanvasPro>/shaders"
+        COMMENT "Copying HLSL shaders to output directory"
+        VERBATIM)
 endif()
 
 if (MSVC)

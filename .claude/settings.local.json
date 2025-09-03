@@ -73,5 +73,5 @@
       }
     ]
   },
-  "disableAllHooks": true
+  "disableAllHooks": false
 }

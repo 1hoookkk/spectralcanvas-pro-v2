@@ -1,6 +1,7 @@
 #include "SpectralCanvasProAudioProcessor.h"
 #include "SpectralCanvasProEditor.h"
 #include "Core/DiagnosticLogger.h"
+#include "Core/ColumnOps.h"
 #include <chrono>
 
 SpectralCanvasProAudioProcessor::SpectralCanvasProAudioProcessor()
@@ -9,6 +10,10 @@ SpectralCanvasProAudioProcessor::SpectralCanvasProAudioProcessor()
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       apvts(*this, nullptr, "Parameters", Params::createParameterLayout())
 {
+    // Set STFT latency immediately on construction for pluginval compatibility
+    // This accounts for overlap-add reconstruction delay in STFT processing
+    const int stftLatency = AtlasConfig::FFT_SIZE - AtlasConfig::HOP_SIZE; // 512-128 = 384
+    setLatencySamples(stftLatency);
 }
 
 SpectralCanvasProAudioProcessor::~SpectralCanvasProAudioProcessor()
@@ -40,7 +45,7 @@ void SpectralCanvasProAudioProcessor::prepareToPlay(double sampleRate, int sampl
     sampleLoader.initialize(sampleRate);
     
     // Initialize RT-safe test feeder
-    maskTestFeeder.initialize(sampleRate, 257); // NUM_BINS for 512-point FFT
+    maskTestFeeder.initialize(sampleRate, AtlasConfig::NUM_BINS);
     
     // Initialize RT-safe spectral processing components
     spectralEngine = std::make_unique<SpectralEngine>();
@@ -55,11 +60,11 @@ void SpectralCanvasProAudioProcessor::prepareToPlay(double sampleRate, int sampl
     // Initialize tiled atlas system
     initializeTiledAtlas();
     
-    // Set STFT latency based on FFT configuration
-    // For 512-point FFT with 128 hop: effective latency ~= (512-128) = 384 samples
-    // This accounts for overlap-add reconstruction delay
-    constexpr int stftLatencySamples = 384; // FFT_SIZE - HOP_SIZE from SpectralEngine constants
-    setLatencySamples(stftLatencySamples);
+    // Set STFT latency based on single-source atlas configuration
+    // This accounts for overlap-add reconstruction delay in STFT processing
+    const int stftLatency = AtlasConfig::FFT_SIZE - AtlasConfig::HOP_SIZE;
+    setLatencySamples(stftLatency);
+    jassert(getLatencySamples() == stftLatency);
     
     // Prepare with JUCE DSP spec
     juce::dsp::ProcessSpec spec;
@@ -180,6 +185,9 @@ void SpectralCanvasProAudioProcessor::releaseResources()
     
     // Shutdown tiled atlas system
     shutdownTiledAtlas();
+    
+    // Reset latency to 0 on teardown for host expectations
+    setLatencySamples(0);
 }
 
 // Called from parameter listener / message thread whenever GUI toggles mode
@@ -947,7 +955,8 @@ bool SpectralCanvasProAudioProcessor::pushMaskColumn(const MaskColumn& mask)
     colEx.timestampSamples = mask.timestampSamples;
     colEx.uiTimestampMicros = mask.uiTimestampMicros;
     colEx.sequenceNumber = mask.sequenceNumber;
-    std::memcpy(colEx.values, mask.values, sizeof(colEx.values));
+    // Enforce NUM_BINS-sized copy at compile time
+    atlas::copyColumn(colEx.values, mask.values);
     
     // Add debug sequence
     colEx.debugSeq = gSeq.fetch_add(1, std::memory_order_relaxed);
@@ -1121,7 +1130,8 @@ void SpectralCanvasProAudioProcessor::convertMaskColumnsToDeltas(uint64_t curren
         // CRITICAL: Runtime bounds checking to prevent heap corruption
         if (maskCol.numBins != AtlasConfig::NUM_BINS) {
             badBinSkips_.fetch_add(1, std::memory_order_relaxed);
-            continue; // Skip corrupted mask to prevent heap overflow
+            jassertfalse; // Debug: catch now rather than crash later
+            continue;     // Drop the malformed delta safely
         }
         
         // Create MaskColumnDelta
