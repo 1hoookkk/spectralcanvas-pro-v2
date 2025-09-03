@@ -438,3 +438,64 @@ void SpectralEngine::applyMaskColumn(const MaskColumn& maskColumn) noexcept
         magnitude[bin] *= clampedMask * 2.0f;
     }
 }
+
+void SpectralEngine::processAtlasUpdates(AtlasUpdateQueue& atlasQueue) noexcept
+{
+    constexpr uint32_t maxUpdatesPerCall = 16;  // RT-safety bound
+    uint32_t processed = 0;
+    uint32_t dropped = 0;
+    
+    AtlasUpdate update;
+    
+    // Process bounded number of updates per call
+    while (processed < maxUpdatesPerCall && atlasQueue.pop(update))
+    {
+        if (update.isPageFlip())
+        {
+            // Page flip: swap active/staging mask buffers atomically
+            // Copy staging to active and mark as updated
+            std::memcpy(atlasActiveMask_.get().data(), 
+                       atlasStagingMask_.get().data(), 
+                       NUM_BINS * sizeof(float));
+            hasMaskUpdates_.store(true, std::memory_order_release);
+            ++processed;
+        }
+        else if (update.isColumnUpdate())
+        {
+            // Column update: validate position and copy mask data
+            const auto& pos = update.position;
+            
+            // Validate position bounds
+            if (pos.columnInTile < AtlasConfig::TILE_WIDTH && 
+                pos.binStart + NUM_BINS <= AtlasConfig::NUM_BINS)
+            {
+                // For now, copy mask data to staging buffer
+                // TODO: Get actual column data from TiledAtlas when implemented
+                // This is a placeholder - mask data should come from the atlas
+                std::fill(atlasStagingMask_.get().begin(), 
+                         atlasStagingMask_.get().end(), 
+                         1.0f); // Default to no attenuation
+                ++processed;
+            }
+            else
+            {
+                ++dropped;  // Invalid position
+            }
+        }
+        else
+        {
+            ++dropped;  // Invalid update type
+        }
+    }
+    
+    // Update diagnostics counters
+    atlasUpdatesProcessed_.fetch_add(processed, std::memory_order_relaxed);
+    atlasUpdatesDropped_.fetch_add(dropped, std::memory_order_relaxed);
+    
+    // Apply active mask if we have updates
+    if (hasMaskUpdates_.load(std::memory_order_acquire))
+    {
+        // Update current mask pointer to use atlas active mask
+        currentMask_.store(atlasActiveMask_.get().data(), std::memory_order_release);
+    }
+}
