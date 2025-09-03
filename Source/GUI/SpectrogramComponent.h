@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_opengl/juce_opengl.h>
+#include <atomic>
 #include "../DSP/SpectralModel.h"
 #include "../DSP/SpectralMask.h"
 #include "../Core/TiledAtlas.h"
@@ -139,9 +140,13 @@ private:
     juce::Image cpuImage_;           // x = column, y = bin
     int cpuBins_ = 0;
     int uploadedColumns_ = 0;
+    std::atomic<uint64_t> colIn_{0};   // analyzer -> ring
+    std::atomic<uint64_t> colOut_{0};  // ring -> UI image
+    std::atomic<bool>     tooShort_{false}; // audio shorter than FFT
     void uploadColumnsBudgeted_();   // ≤ 64 / frame
     void growImageIfNeeded_(int requiredWidth);
     static juce::Colour magToGrey_(float v);
+    void generateTestColumns(int numSamples, int fftSize, int hop); // TEMP: diagnostic test data
     HudProvider hudProvider_;
     
     // === Phase 3 mask delta queue ===
@@ -162,7 +167,7 @@ private:
     float maxTimeSeconds_ = 60.0f;
     
     // Render settings
-    RenderMode renderMode_ = RenderMode::GpuAtlas;
+    RenderMode renderMode_ = RenderMode::Legacy; // TEMP: force CPU image visible
     
     // Performance tracking
     uint32_t frameCounter_ = 0;

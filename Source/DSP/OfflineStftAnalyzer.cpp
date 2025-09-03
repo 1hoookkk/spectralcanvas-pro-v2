@@ -1,5 +1,6 @@
 #include "OfflineStftAnalyzer.h"
 #include <juce_audio_formats/juce_audio_formats.h>
+#include <juce_core/juce_core.h>
 #include <algorithm>
 #include <cmath>
 
@@ -149,6 +150,13 @@ void OfflineStftAnalyzer::analysisThreadMain() noexcept {
     const auto totalSamples = totalSamples_.load(std::memory_order_acquire);
     const auto sampleRate = fileSampleRate_.load(std::memory_order_acquire);
     const auto streamingRate = columnStreamingRate_.load(std::memory_order_acquire);
+    
+    if (totalSamples < FFT_SIZE) {
+        DBG("[SCP] OfflineStftAnalyzer: file too short for one FFT frame (" << totalSamples
+            << " < " << FFT_SIZE << ")");
+        analyzing_.store(false, std::memory_order_release);
+        return;
+    }
     const auto microsBetweenColumns = 1000000 / streamingRate; // Convert to microseconds
     
     auto* audioData = audioBuffer_.getReadPointer(0);

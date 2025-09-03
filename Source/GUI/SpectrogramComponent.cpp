@@ -80,7 +80,10 @@ void SpectrogramComponent::paint(juce::Graphics& g) {
     juce::String hud;
     hud << "FPS est: ~" << juce::String(1000.0f / juce::jmax(1.0f, lastRenderTimeMs_), 1)
         << "  CPU img: " << cpuImage_.getWidth() << "x" << cpuImage_.getHeight()
-        << "  Uploaded/frame: " << uploadedColumns_ << "\n";
+        << "  Uploaded/frame: " << uploadedColumns_
+        << "  ColIn: "  << (juce::int64)colIn_.load()
+        << "  ColOut: " << (juce::int64)colOut_.load() << "\n";
+    if (tooShort_.load()) hud << "File shorter than FFT size — no columns.\n";
     if (hudProvider_)
     {
         const auto s = hudProvider_();
@@ -378,11 +381,22 @@ void SpectrogramComponent::timerCallback() {
 void SpectrogramComponent::beginAnalysis(const juce::AudioBuffer<float>& mono, double sampleRate,
                                          int fftSize, int hop)
 {
-    juce::ignoreUnused(mono, sampleRate, hop);
+    DBG("[SCP] beginAnalysis sr=" << sampleRate << " fft=" << fftSize << " hop=" << hop
+         << " samples=" << mono.getNumSamples());
     cpuBins_ = fftSize / 2;
     cpuImage_ = juce::Image(juce::Image::RGB, juce::jmax(2048, 1), juce::jmax(cpuBins_, 1), false);
     uploadedColumns_ = 0;
-    // TODO: Wire to simplified STFT analyzer when ready
+    colIn_ = 0; colOut_ = 0; tooShort_ = false;
+    
+    // For diagnostic - generate some test data if file is too short
+    if (mono.getNumSamples() < fftSize) {
+        tooShort_ = true;
+        DBG("[SCP] File too short for FFT: " << mono.getNumSamples() << " < " << fftSize);
+    } else {
+        // TODO: Wire to simplified STFT analyzer when ready
+        // For now, generate a few test columns to verify the data path
+        generateTestColumns(mono.getNumSamples(), fftSize, hop);
+    }
     repaint();
 }
 
@@ -398,6 +412,7 @@ void SpectrogramComponent::uploadColumnsBudgeted_()
     ColumnRing::Node node;
     while (used < budget && ring_.pop(node))
     {
+        if (node.mags.empty()) continue; // nothing to draw
         // Ensure image is wide enough
         growImageIfNeeded_((int)node.col + 1);
         
@@ -412,6 +427,7 @@ void SpectrogramComponent::uploadColumnsBudgeted_()
             cpuImage_.setPixelAt(x, py, magToGrey_(v));
         }
         ++used; ++uploadedColumns_;
+        colOut_.fetch_add(1, std::memory_order_relaxed);
     }
 }
 
@@ -446,4 +462,33 @@ void SpectrogramComponent::flushCoalescedDeltas_()
     
     (void)maskDeltaQueue_->push(d); // drop when full (bounded)
     coalesced_.active = false;
+}
+
+void SpectrogramComponent::generateTestColumns(int numSamples, int fftSize, int hop)
+{
+    // TEMP: Generate synthetic test columns to verify data path
+    const int numColumns = (numSamples - fftSize) / hop + 1;
+    const int testColumns = juce::jmin(20, numColumns); // Generate up to 20 test columns
+    
+    DBG("[SCP] Generating " << testColumns << " test columns for diagnostic");
+    
+    for (int col = 0; col < testColumns; ++col)
+    {
+        ColumnRing::Node node;
+        node.col = col;
+        node.mags.resize(cpuBins_);
+        
+        // Generate simple test pattern: low freq content with some harmonics
+        for (int bin = 0; bin < cpuBins_; ++bin)
+        {
+            const float freq = (float)bin / (float)cpuBins_;
+            const float mag = std::exp(-freq * 3.0f) * (0.5f + 0.5f * std::sin(freq * 10.0f + col * 0.1f));
+            node.mags[bin] = mag * 50.0f; // Scale up for visibility
+        }
+        
+        if (ring_.push(std::move(node)))
+        {
+            colIn_.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
 }

@@ -185,6 +185,12 @@ void SpectralCanvasProEditor::loadSampleButtonClicked()
                 // Update UI to show loaded sample
                 spectrogram.setModel(&audioProcessor.getSpectralModel());
                 spectrogram.setEditableMask(&audioProcessor.getSpectralMask());
+                
+                // **DIAGNOSTIC**: Start spectrogram analysis with loaded audio
+                DBG("[SCP] Editor: starting analysis with file SR=" << sample.sampleRate
+                    << " samples=" << sample.audio.getNumSamples());
+                spectrogram.beginAnalysis(sample.audio, sample.sampleRate, 512, 128);
+                
                 spectrogram.repaint();
                 
                 // Show success toast
@@ -240,6 +246,12 @@ void SpectralCanvasProEditor::loadAudioFile(const juce::File& file)
                 // Update UI to show loaded sample
                 spectrogram.setModel(&audioProcessor.getSpectralModel());
                 spectrogram.setEditableMask(&audioProcessor.getSpectralMask());
+                
+                // **DIAGNOSTIC**: Start spectrogram analysis with loaded audio
+                DBG("[SCP] Editor: starting analysis with file SR=" << sample.sampleRate
+                    << " samples=" << sample.audio.getNumSamples());
+                spectrogram.beginAnalysis(sample.audio, sample.sampleRate, 512, 128);
+                
                 spectrogram.repaint();
                 
                 // Show success toast
