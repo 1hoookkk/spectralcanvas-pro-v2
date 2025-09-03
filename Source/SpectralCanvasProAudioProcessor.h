@@ -16,6 +16,9 @@
 #include "DSP/SampleLoader.h"
 #include "DSP/MaskTestFeeder.h"
 #include "SpectralPaintProcessor.h"
+#include "DSP/OfflineStftAnalyzer.h"
+#include "DSP/HopScheduler.h"
+#include "Core/TiledAtlas.h"
 
 #ifdef PHASE4_EXPERIMENT
 #include "DSP/KeyFilter.h"
@@ -93,6 +96,11 @@ public:
         uint64_t processedSamples = 0;
     };
     PerformanceMetrics getPerformanceMetrics() const;
+    
+    // Tripwire counter access for PerfHUD
+    uint32_t getBadBinSkips() const noexcept { return badBinSkips_.load(std::memory_order_relaxed); }
+    uint32_t getBadColSkips() const noexcept { return badColSkips_.load(std::memory_order_relaxed); }
+    uint32_t getDeltaDrainsPerBlock() const noexcept { return deltaDrainsPerBlock_.load(std::memory_order_relaxed); }
     
     // Perf HUD helpers (non-RT consumers read these)
     void collectPerfCounters(uint64_t& outTotalBlocks,
@@ -198,6 +206,11 @@ private:
     MaskColumnQueue maskColumnQueue;
     SampleQueue sampleQueue;
     
+    // Tiled atlas message queues
+    MaskDeltaQueue maskDeltaQueue;
+    AtlasUpdateQueue atlasUpdateQueue;
+    PageManagementQueue pageManagementQueue;
+    
     // Handle-based sample state (audio thread only)
     std::optional<SampleView> currentSample;
     uint32_t currentSampleHandle = 0;
@@ -224,10 +237,22 @@ private:
     dsp::SpectralEngineStub spectralStub;
     dsp::KeyFilter keyFilter;
     
+    // KeyFilter rebuild queue for thread safety
+    struct KeyFilterRebuildRequest {
+        int rootNote;
+        dsp::ScaleType scale;
+    };
+    SpscRingBuffer<KeyFilterRebuildRequest, 8> keyFilterRebuildQueue;
+    
     // Parameter atomics for RT-safety
     std::atomic<bool> useTestFeeder_{false};
     std::atomic<bool> keyFilterEnabled_{true};
     std::atomic<float> oscGain_{0.2f};
+    std::atomic<int>   mode_{0};         // 0=Synth, 1=Resynth, 2=Hybrid
+    std::atomic<float> blend_{0.0f};     // 0=synth, 1=resynth
+    std::atomic<float> respeed_{1.0f};   // 0.25..4.0
+    std::atomic<float> brushSize_{8.0f};      // Brush size target
+    std::atomic<float> brushStrength_{0.8f};  // Brush strength target
     std::atomic<int> scaleType_{1};  // 0=Chromatic, 1=Major, 2=Minor
     std::atomic<int> rootNote_{0};   // 0-11
     std::atomic<bool> useModernPaint_{false};
@@ -254,10 +279,16 @@ private:
     std::atomic<uint64_t> processedSampleCount_{0};
     std::atomic<uint64_t> epochSteadyNanos_{0};        // Unified timebase epoch
     std::atomic<uint32_t> nextMaskSequenceNumber_{1};
+    std::atomic<uint64_t> xrunCount_{0};              // RT-safe XRun detection counter
     
     // Phase 4 queue diagnostics  
     std::atomic<uint64_t> maskPushCount_{0};
     std::atomic<uint64_t> maskDropCount_{0};
+    
+    // Tripwire counters for heap corruption detection
+    std::atomic<uint32_t> badBinSkips_{0};      // Invalid bin count detections
+    std::atomic<uint32_t> badColSkips_{0};      // Invalid column position detections  
+    std::atomic<uint32_t> deltaDrainsPerBlock_{0}; // Delta conversions per audio block
     
     // RT-safe diagnostic counters (no logging in RT paths)
     std::atomic<uint64_t> pushMaskAttempts_{0};
@@ -287,6 +318,9 @@ private:
     std::atomic<uint64_t> totalBlocksProcessed_{0};
     std::atomic<uint64_t> totalSamplesProcessed_{0};
     std::atomic<int> lastBlockSize_{0};
+
+    // Hybrid mode scratch buffer (preallocated in prepareToPlay)
+    juce::AudioBuffer<float> hybridBuffer_;
     
     // Helper to fetch APVTS values safely (call on audio thread)
     inline float getParamFast(const juce::String& paramId) const noexcept
@@ -296,5 +330,25 @@ private:
         return 0.0f;
     }
     
+    // Tiled atlas system components
+    std::shared_ptr<TiledAtlas> tiledAtlas_;
+    std::unique_ptr<OfflineStftAnalyzer> offlineAnalyzer_;
+    std::unique_ptr<HopScheduler> hopScheduler_;
+    
+    // Atlas integration methods
+    void initializeTiledAtlas() noexcept;
+    void shutdownTiledAtlas() noexcept;
+    void processTiledAtlasMessages() noexcept; // Called from audio thread
+    void convertMaskColumnsToDeltas(uint64_t currentSamplePos) noexcept; // RT-safe conversion bridge
+    
+    // Atlas public access for editor
+public:
+    std::shared_ptr<TiledAtlas> getTiledAtlas() const noexcept { return tiledAtlas_; }
+    MaskDeltaQueue& getMaskDeltaQueue() noexcept { return maskDeltaQueue; }
+    AtlasUpdateQueue& getAtlasUpdateQueue() noexcept { return atlasUpdateQueue; }
+    PageManagementQueue& getPageManagementQueue() noexcept { return pageManagementQueue; }
+    OfflineStftAnalyzer* getOfflineAnalyzer() const noexcept { return offlineAnalyzer_.get(); }
+    
+private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectralCanvasProAudioProcessor)
 };

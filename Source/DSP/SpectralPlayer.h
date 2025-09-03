@@ -8,6 +8,7 @@ public:
     void prepare (double sr, int blockSize, const SpectralModel* m, const SpectralMask* mk);
     void reset();
     void process (juce::AudioBuffer<float>& out);
+    void setRespeed(float newRespeed) noexcept { respeed = juce::jlimit(0.25f, 4.0f, newRespeed); }
 private:
     const SpectralModel* model = nullptr;
     const SpectralMask*  mask  = nullptr;
@@ -18,4 +19,6 @@ private:
     std::vector<juce::dsp::Complex<float>> ifftIn, ifftOut;
     std::vector<float> ola, norm;
     int writePos = 0, frameCursor = 0, inHopCursor = 0;
+    float respeed = 1.0f;
+    float framePosition = 0.0f; // Fractional frame position for respeed
 };

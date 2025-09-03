@@ -55,6 +55,11 @@ public:
         uint32_t xrunCount = 0;
         double sampleRate = 48000.0;
         int blockSize = 512;
+        
+        // Tripwire counters for heap corruption detection
+        uint32_t badBinSkips = 0;      // Invalid bin count detections
+        uint32_t badColSkips = 0;      // Invalid column position detections  
+        uint32_t deltaDrains = 0;      // Delta conversions per block
     };
     
     // Get last sampled metrics for external use (e.g., automation)

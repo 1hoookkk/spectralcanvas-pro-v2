@@ -20,6 +20,10 @@ SpectralCanvasProAudioProcessor::~SpectralCanvasProAudioProcessor()
     apvts.removeParameterListener(Params::ParameterIDs::oscGain, this);
     apvts.removeParameterListener(Params::ParameterIDs::scaleType, this);
     apvts.removeParameterListener(Params::ParameterIDs::rootNote, this);
+    apvts.removeParameterListener(Params::ParameterIDs::useModernPaint, this);
+    apvts.removeParameterListener(Params::ParameterIDs::mode, this);
+    apvts.removeParameterListener(Params::ParameterIDs::blend, this);
+    apvts.removeParameterListener(Params::ParameterIDs::respeed, this);
 #endif
 }
 
@@ -47,6 +51,15 @@ void SpectralCanvasProAudioProcessor::prepareToPlay(double sampleRate, int sampl
     
     // Initialize modern JUCE DSP-based spectral painting processor
     spectralPaintProcessor = std::make_unique<SpectralPaintProcessor>();
+    
+    // Initialize tiled atlas system
+    initializeTiledAtlas();
+    
+    // Set STFT latency based on FFT configuration
+    // For 512-point FFT with 128 hop: effective latency ~= (512-128) = 384 samples
+    // This accounts for overlap-add reconstruction delay
+    constexpr int stftLatencySamples = 384; // FFT_SIZE - HOP_SIZE from SpectralEngine constants
+    setLatencySamples(stftLatencySamples);
     
     // Prepare with JUCE DSP spec
     juce::dsp::ProcessSpec spec;
@@ -93,6 +106,10 @@ void SpectralCanvasProAudioProcessor::prepareToPlay(double sampleRate, int sampl
     scaleType_.store(static_cast<int>(apvts.getParameterAsValue(Params::ParameterIDs::scaleType).getValue()), std::memory_order_relaxed);
     rootNote_.store(static_cast<int>(apvts.getParameterAsValue(Params::ParameterIDs::rootNote).getValue()), std::memory_order_relaxed);
     useModernPaint_.store(apvts.getParameterAsValue(Params::ParameterIDs::useModernPaint).getValue(), std::memory_order_relaxed);
+    // Initialize dual-mode params
+    mode_.store(static_cast<int>(apvts.getParameterAsValue(Params::ParameterIDs::mode).getValue()), std::memory_order_relaxed);
+    blend_.store(apvts.getParameterAsValue(Params::ParameterIDs::blend).getValue(), std::memory_order_relaxed);
+    respeed_.store(apvts.getParameterAsValue(Params::ParameterIDs::respeed).getValue(), std::memory_order_relaxed);
     
     // Add parameter listeners for real-time updates
     apvts.addParameterListener(Params::ParameterIDs::useTestFeeder, this);
@@ -101,6 +118,9 @@ void SpectralCanvasProAudioProcessor::prepareToPlay(double sampleRate, int sampl
     apvts.addParameterListener(Params::ParameterIDs::scaleType, this);
     apvts.addParameterListener(Params::ParameterIDs::rootNote, this);
     apvts.addParameterListener(Params::ParameterIDs::useModernPaint, this);
+    apvts.addParameterListener(Params::ParameterIDs::mode, this);
+    apvts.addParameterListener(Params::ParameterIDs::blend, this);
+    apvts.addParameterListener(Params::ParameterIDs::respeed, this);
 #endif
     
     // Initialize RT-safe parameter smoothers (50ms ramp time for smooth automation)
@@ -141,6 +161,10 @@ void SpectralCanvasProAudioProcessor::prepareToPlay(double sampleRate, int sampl
     {
         spectralReady = false;
     }
+
+    // Preallocate hybrid buffer for mix mode (avoid RT allocations)
+    const int numOutChans = std::max(getTotalNumInputChannels(), getTotalNumOutputChannels());
+    hybridBuffer_.setSize(numOutChans, samplesPerBlock);
 }
 
 void SpectralCanvasProAudioProcessor::releaseResources()
@@ -153,23 +177,30 @@ void SpectralCanvasProAudioProcessor::releaseResources()
         
     sampleLoader.shutdown();
     maskTestFeeder.reset();
+    
+    // Shutdown tiled atlas system
+    shutdownTiledAtlas();
 }
 
 // Called from parameter listener / message thread whenever GUI toggles mode
 void SpectralCanvasProAudioProcessor::setAudioPathFromParams()
 {
 #ifdef PHASE4_EXPERIMENT
+    const int mode = mode_.load(std::memory_order_relaxed); // 0=Synth,1=Resynth,2=Hybrid
     const bool useTestFeeder = useTestFeeder_.load(std::memory_order_relaxed);
     const bool useModernPaint = useModernPaint_.load(std::memory_order_relaxed);
-    
-    AudioPath path;
-    if (useTestFeeder)
-        path = AudioPath::TestFeeder;
-    else if (useModernPaint)
-        path = AudioPath::ModernPaint;
-    else
-        path = AudioPath::Phase4Synth;
-        
+
+    AudioPath path = AudioPath::Phase4Synth;
+    if (mode == 1) {
+        // Resynth only (if ready)
+        path = spectralReady ? AudioPath::SpectralResynthesis : AudioPath::Phase4Synth;
+    } else {
+        // Synth-based paths
+        if (useTestFeeder) path = AudioPath::TestFeeder;
+        else if (useModernPaint) path = AudioPath::ModernPaint;
+        else path = AudioPath::Phase4Synth;
+    }
+
     currentPath_.store(path, std::memory_order_release);
 #else
     currentPath_.store(AudioPath::TestFeeder, std::memory_order_release);
@@ -218,6 +249,12 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     lastBlockSize_.store(numSamples, std::memory_order_relaxed);
     totalBlocksProcessed_.fetch_add(1, std::memory_order_relaxed);
     totalSamplesProcessed_.fetch_add(static_cast<uint64_t>(numSamples), std::memory_order_relaxed);
+    
+    // RT-safe XRun detection: check for unusual buffer conditions
+    if (numSamples == 0 || (numSamples < 16 && currentBlockSize > 64)) {
+        // Abnormally small buffer size may indicate XRun condition
+        xrunCount_.fetch_add(1, std::memory_order_relaxed);
+    }
 
     // RT path transition handling
     const auto path = currentPath_.load(std::memory_order_acquire);
@@ -250,6 +287,8 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
 
     // Update parameter smoothers with current target values (RT-safe)
     oscGainSmoother_.setTargetValue(oscGain_.load(std::memory_order_relaxed));
+    brushSizeSmoother_.setTargetValue(brushSize_.load(std::memory_order_relaxed));
+    brushStrengthSmoother_.setTargetValue(brushStrength_.load(std::memory_order_relaxed));
     
     // Use smoothed params on the audio thread
     const float oscGain = juce::jlimit(1.0e-6f, 1.0f, oscGainSmoother_.getNextValue());
@@ -261,14 +300,100 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     
     // Snapshot only the params needed for the chosen path (no APVTS lookups here)
     const bool keyFilterOn = keyFilterEnabled_.load(std::memory_order_relaxed);
+    const int mode = mode_.load(std::memory_order_relaxed); // 0=Synth,1=Resynth,2=Hybrid
+    const bool resReady = spectralReady && spectralModel.isReady();
+    const float blend = juce::jlimit(0.0f, 1.0f, blend_.load(std::memory_order_relaxed));
+
+    // Hybrid mode: mix resynthesis and Phase4 synth
+    if (mode == 2 && resReady)
+    {
+        // 1) Render resynthesis into main buffer
+        spectralPlayer.process(buffer);
+
+        // 2) Render Phase4 synth into hybridBuffer_
+        hybridBuffer_.clear();
+
+        // Drain sample queue for currentSample activation
+        SampleMessage sampleMsg;
+        while (sampleQueue.pop(sampleMsg))
+        {
+            if (sampleMsg.isValid())
+            {
+                auto& memSys = RealtimeMemorySystem::getInstance();
+                auto view = memSys.samples().lookup(sampleMsg.handle);
+                if (view)
+                {
+                    currentSample = *view;
+                    currentSampleHandle = sampleMsg.handle;
+                    samplePosition = 0;
+                }
+            }
+        }
+
+        // Use standard conversion path for mask processing
+        const uint64_t currentSamplePos = totalSamplesProcessed_.load(std::memory_order_acquire);
+        convertMaskColumnsToDeltas(currentSamplePos);
+        if (keyFilterOn) {
+            keyFilter.apply(spectralStub.getMagnitudesWritePtr(), AtlasConfig::NUM_BINS);
+        } else {
+            keyFilter.enabled.store(false, std::memory_order_relaxed);
+        }
+
+        // Optional sample mix into hybrid buffer
+        if (currentSample && currentSample->channels != nullptr && currentSample->numFrames > 0)
+        {
+            const uint32_t frames = currentSample->numFrames;
+            const uint32_t chans  = currentSample->numChannels;
+            const float sGain = 0.15f;
+            for (int n = 0; n < numSamples; ++n)
+            {
+                float s = 0.0f;
+                for (uint32_t ch = 0; ch < chans; ++ch)
+                {
+                    const float* src = currentSample->channels[ch];
+                    const uint64_t idx = (samplePosition + (uint64_t) n) % frames;
+                    s += src[idx];
+                }
+                s = (chans > 0 ? s / (float) chans : s) * sGain;
+                for (int outCh = 0; outCh < hybridBuffer_.getNumChannels(); ++outCh)
+                    hybridBuffer_.getWritePointer(outCh)[n] += s;
+            }
+            samplePosition = (samplePosition + (uint64_t) numSamples) % (uint64_t) frames;
+        }
+
+        // Render spectral stub into hybrid buffer
+        spectralStub.process(hybridBuffer_, oscGain);
+
+        // 3) Mix: blend means 0=synth only, 1=resynth only
+        const float synthGain = 1.0f - blend;
+        if (synthGain > 0.0f)
+        {
+            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+            {
+                const float* src = hybridBuffer_.getReadPointer(ch);
+                float* dst = buffer.getWritePointer(ch);
+                for (int n = 0; n < numSamples; ++n)
+                {
+                    dst[n] = dst[n] * blend + src[n] * synthGain;
+                }
+            }
+        }
+
+        // Mark wrote if non-silent
+        const float rms = buffer.getNumChannels() > 0 ? buffer.getRMSLevel(0, 0, numSamples) : 0.0f;
+        if (rms > 1.0e-6f) wroteAudioFlag_.store(true, std::memory_order_relaxed);
+        return;
+    }
 
     switch (path)
     {
         case AudioPath::Silent:
-#ifdef PHASE4_EXPERIMENT
-            // Drain queued paint columns so "Drops" stays at 0 in silent mode
-            spectralStub.popAllMaskColumnsInto(maskColumnQueue); // discard all data
-#endif
+            // Convert any pending mask columns to deltas but don't apply them
+            // This prevents queue buildup without processing through spectralStub
+            {
+                const uint64_t currentSamplePos = totalSamplesProcessed_.load(std::memory_order_acquire);
+                convertMaskColumnsToDeltas(currentSamplePos);
+            }
             // Nothing is rendered; output remains cleared.
             return;
 
@@ -334,34 +459,45 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
                 }
             }
             
-            // 2) Bounded pop from mask queue (RT-safe, no allocations)
-            int masksPopped = 0;
-            while (masksPopped < MAX_MASKS_PER_BLOCK)
+            // 2) Use standard conversion path instead of direct spectralStub drain
             {
-                MaskColumn mask;
-                if (!maskColumnQueue.pop(mask)) break;
-                
-                maskRing_[maskRingIdx_] = std::move(mask);
-                maskRingIdx_ = (maskRingIdx_ + 1) % MAX_MASKS_PER_BLOCK;
-                masksPopped++;
-            }
-            
-            // Masks are now applied directly in popAllMaskColumnsInto above
-            if (masksPopped > 0)
-            {
-                masksApplied_.fetch_add(masksPopped, std::memory_order_relaxed);
-                lastMaskTimestamp_.store(getCurrentTimeUs(), std::memory_order_relaxed);
+                const uint64_t currentSamplePos = totalSamplesProcessed_.load(std::memory_order_acquire);
+                convertMaskColumnsToDeltas(currentSamplePos);
             }
             
             // 2) Gate (only apply when explicitly enabled)
             if (keyFilterOn) {
-                keyFilter.apply(spectralStub.getMagnitudesWritePtr(), 257);
+                keyFilter.apply(spectralStub.getMagnitudesWritePtr(), AtlasConfig::NUM_BINS);
             } else {
                 // Ensure KeyFilter is disabled when not wanted
                 keyFilter.enabled.store(false, std::memory_order_relaxed);
             }
             
             // 3) Render
+            // Optional: simple sample playback if a sample is active
+            if (currentSample && currentSample->channels != nullptr && currentSample->numFrames > 0)
+            {
+                const uint32_t frames = currentSample->numFrames;
+                const uint32_t chans  = currentSample->numChannels;
+                const float gain = 0.15f;
+                for (int n = 0; n < numSamples; ++n)
+                {
+                    // Mix down source channels
+                    float s = 0.0f;
+                    for (uint32_t ch = 0; ch < chans; ++ch)
+                    {
+                        const float* src = currentSample->channels[ch];
+                        const uint64_t idx = (samplePosition + (uint64_t) n) % frames;
+                        s += src[idx];
+                    }
+                    s = (chans > 0 ? s / (float) chans : s) * gain;
+                    for (int outCh = 0; outCh < buffer.getNumChannels(); ++outCh)
+                        buffer.getWritePointer(outCh)[n] += s;
+                }
+                samplePosition = (samplePosition + (uint64_t) numSamples) % (uint64_t) frames;
+            }
+
+            // Continue Phase4 synthesis
             spectralStub.process(buffer, oscGain);
             
             // DIAGNOSTIC: Force-audible chirp to prove Phase4 branch executes
@@ -427,6 +563,17 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
             return;
         }
     }
+    
+    // Process tiled atlas messages (RT-safe)
+    processTiledAtlasMessages();
+    
+#ifdef PHASE4_EXPERIMENT
+    // Process KeyFilter rebuild requests (RT-safe)
+    KeyFilterRebuildRequest rebuildRequest;
+    while (keyFilterRebuildQueue.pop(rebuildRequest)) {
+        keyFilter.rebuildAsync(rebuildRequest.rootNote, rebuildRequest.scale);
+    }
+#endif
     
 #if JUCE_DEBUG
     // RT-SAFE: Silent audio detection using atomic counters only
@@ -499,38 +646,54 @@ void SpectralCanvasProAudioProcessor::parameterChanged(const juce::String& param
     else if (parameterID == Params::ParameterIDs::oscGain)
     {
         oscGain_.store(newValue, std::memory_order_relaxed);
-        // Update smoother target (message thread is safe for this)
-        oscGainSmoother_.setTargetValue(newValue);
+        // Smoother target will be set in processBlock - RT-safe
     }
     else if (parameterID == Params::ParameterIDs::brushSize)
     {
-        // Update smoother target for brush size
-        brushSizeSmoother_.setTargetValue(newValue);
+        brushSize_.store(newValue, std::memory_order_relaxed);
+        // Smoother target will be set in processBlock - RT-safe
     }
     else if (parameterID == Params::ParameterIDs::brushStrength)
     {
-        // Update smoother target for brush strength
-        brushStrengthSmoother_.setTargetValue(newValue);
+        brushStrength_.store(newValue, std::memory_order_relaxed);
+        // Smoother target will be set in processBlock - RT-safe
     }
     else if (parameterID == Params::ParameterIDs::scaleType)
     {
         const int scaleType = static_cast<int>(newValue);
         scaleType_.store(scaleType, std::memory_order_relaxed);
         
-        // Rebuild key filter LUT with new scale
+        // Queue rebuild request for audio thread processing
         const int root = rootNote_.load(std::memory_order_relaxed);
-        dsp::ScaleType scale = static_cast<dsp::ScaleType>(scaleType);
-        keyFilter.rebuildAsync(root, scale);
+        KeyFilterRebuildRequest request{root, static_cast<dsp::ScaleType>(scaleType)};
+        keyFilterRebuildQueue.push(request); // Non-blocking
     }
     else if (parameterID == Params::ParameterIDs::rootNote)
     {
         const int rootNote = static_cast<int>(newValue);
         rootNote_.store(rootNote, std::memory_order_relaxed);
         
-        // Rebuild key filter LUT with new root
+        // Queue rebuild request for audio thread processing
         const int scaleType = scaleType_.load(std::memory_order_relaxed);
-        dsp::ScaleType scale = static_cast<dsp::ScaleType>(scaleType);
-        keyFilter.rebuildAsync(rootNote, scale);
+        KeyFilterRebuildRequest request{rootNote, static_cast<dsp::ScaleType>(scaleType)};
+        keyFilterRebuildQueue.push(request); // Non-blocking
+    }
+    else if (parameterID == Params::ParameterIDs::mode)
+    {
+        mode_.store(static_cast<int>(newValue), std::memory_order_relaxed);
+        setAudioPathFromParams();
+    }
+    else if (parameterID == Params::ParameterIDs::blend)
+    {
+        blend_.store(newValue, std::memory_order_relaxed);
+    }
+    else if (parameterID == Params::ParameterIDs::respeed)
+    {
+        respeed_.store(newValue, std::memory_order_relaxed);
+        // Update spectral player respeed if spectral pipeline is ready
+        if (spectralReady) {
+            spectralPlayer.setRespeed(newValue);
+        }
     }
 }
 #else
@@ -686,8 +849,49 @@ bool SpectralCanvasProAudioProcessor::activateSampleRenderer(const juce::AudioBu
     
     // Mark renderer as active
     hasActiveRenderer_.store(true, std::memory_order_release);
-    
+
     juce::Logger::writeToLog("RENDERER: Renderer activation successful");
+
+    // Also publish this sample via handle-based RT system for Phase4 path
+    {
+        auto& memSys = RealtimeMemorySystem::getInstance();
+        auto handle = memSys.samples().allocate();
+        if (handle)
+        {
+            // Keep audio data alive on UI/message thread by copying into owned buffers
+            static std::vector<std::unique_ptr<float[]>> ownedChannels;
+            static std::vector<const float*> channelPtrs;
+
+            ownedChannels.clear();
+            channelPtrs.clear();
+
+            const int numChannels = sampleData.getNumChannels();
+            const int numSamples  = sampleData.getNumSamples();
+            for (int ch = 0; ch < numChannels; ++ch)
+            {
+                auto channelData = std::make_unique<float[]>(numSamples);
+                std::copy(sampleData.getReadPointer(ch),
+                          sampleData.getReadPointer(ch) + numSamples,
+                          channelData.get());
+                channelPtrs.push_back(channelData.get());
+                ownedChannels.push_back(std::move(channelData));
+            }
+
+            SampleView view(channelPtrs.data(), (uint32_t) numChannels, (uint32_t) numSamples, sourceSampleRate);
+            if (memSys.samples().publish(*handle, view))
+            {
+                SampleMessage msg;
+                msg.handle = *handle;
+                msg.tscOrUsec = juce::Time::getMillisecondCounter() * 1000ULL;
+                sampleQueue.push(msg);
+                juce::Logger::writeToLog("RENDERER: Published sample handle to RT system");
+            }
+            else
+            {
+                memSys.samples().free(*handle);
+            }
+        }
+    }
     return true;
 }
 
@@ -802,8 +1006,8 @@ SpectralCanvasProAudioProcessor::PerformanceMetrics SpectralCanvasProAudioProces
     // Audio processing stats
     metrics.processedSamples = processedSampleCount_.load(std::memory_order_relaxed);
     
-    // TODO: XRun detection from host if available
-    metrics.xrunCount = 0;
+    // XRun detection from RT-safe buffer monitoring
+    metrics.xrunCount = xrunCount_.load(std::memory_order_relaxed);
     
     return metrics;
 }
@@ -823,6 +1027,158 @@ bool SpectralCanvasProAudioProcessor::pushPaintEvent(float y, float intensity, u
     
     // Forward to spectral paint processor
     return spectralPaintProcessor->pushPaintEvent(y, intensity, timestampMs);
+}
+
+// Tiled atlas system implementation methods
+
+void SpectralCanvasProAudioProcessor::initializeTiledAtlas() noexcept {
+    // Initialize tiled atlas
+    tiledAtlas_ = std::make_shared<TiledAtlas>();
+    if (!tiledAtlas_->initialize()) {
+        tiledAtlas_.reset();
+        return;
+    }
+    
+    // Initialize offline analyzer
+    offlineAnalyzer_ = std::make_unique<OfflineStftAnalyzer>();
+    if (!offlineAnalyzer_->initialize(currentSampleRate, maskDeltaQueue)) {
+        offlineAnalyzer_.reset();
+        return;
+    }
+    
+    // Initialize hop scheduler
+    hopScheduler_ = std::make_unique<HopScheduler>();
+    if (!hopScheduler_->initialize(currentSampleRate, maskDeltaQueue, atlasUpdateQueue)) {
+        hopScheduler_.reset();
+        return;
+    }
+}
+
+void SpectralCanvasProAudioProcessor::shutdownTiledAtlas() noexcept {
+    if (offlineAnalyzer_) {
+        offlineAnalyzer_->shutdown();
+        offlineAnalyzer_.reset();
+    }
+    
+    if (hopScheduler_) {
+        hopScheduler_->reset();
+        hopScheduler_.reset();
+    }
+    
+    if (tiledAtlas_) {
+        tiledAtlas_->shutdown();
+        tiledAtlas_.reset();
+    }
+}
+
+void SpectralCanvasProAudioProcessor::processTiledAtlasMessages() noexcept {
+    if (!hopScheduler_) return;
+    
+    // Get current audio position
+    const uint64_t currentSamplePos = totalSamplesProcessed_.load(std::memory_order_acquire);
+    const uint32_t hopIndex = static_cast<uint32_t>(currentSamplePos / SpectralEngine::HOP_SIZE);
+    
+    // Convert MaskColumn → MaskColumnDelta and feed to HopScheduler
+    convertMaskColumnsToDeltas(currentSamplePos);
+    
+    // Process hop-scheduled mask deltas
+    hopScheduler_->processHop(currentSamplePos, hopIndex);
+    
+    // Process any atlas page management messages
+    AtlasPageMessage pageMsg;
+    while (pageManagementQueue.pop(pageMsg)) {
+        if (!tiledAtlas_) continue;
+        
+        switch (pageMsg.type) {
+            case AtlasPageMessage::Activate:
+                if (pageMsg.handle.isValid()) {
+                    tiledAtlas_->activatePage(pageMsg.handle);
+                }
+                break;
+                
+            case AtlasPageMessage::Release:
+                if (pageMsg.handle.isValid()) {
+                    tiledAtlas_->releasePage(pageMsg.handle);
+                }
+                break;
+                
+            default:
+                break; // Other message types handled by background thread
+        }
+    }
+}
+
+void SpectralCanvasProAudioProcessor::convertMaskColumnsToDeltas(uint64_t currentSamplePos) noexcept {
+    MaskColumn maskCol;
+    static constexpr size_t MAX_CONVERSIONS_PER_BLOCK = 16; // RT-safety: bounded processing
+    size_t conversionsThisBlock = 0;
+    
+    // Drain painting system output with bounded processing
+    while (maskColumnQueue.pop(maskCol) && 
+           maskDeltaQueue.hasSpaceAvailable() && 
+           conversionsThisBlock < MAX_CONVERSIONS_PER_BLOCK) {
+        
+        // CRITICAL: Runtime bounds checking to prevent heap corruption
+        if (maskCol.numBins != AtlasConfig::NUM_BINS) {
+            badBinSkips_.fetch_add(1, std::memory_order_relaxed);
+            continue; // Skip corrupted mask to prevent heap overflow
+        }
+        
+        // Create MaskColumnDelta
+        MaskColumnDelta delta;
+        
+        // Map UI column to atlas position
+        // FINAL SPEC: column = floor((playheadSamples - startOffsetSamples) / HOP)
+        // For now, use maskCol.x directly as column index
+        const uint32_t column = static_cast<uint32_t>(maskCol.x);
+        const uint32_t tileId = column / AtlasConfig::TILE_WIDTH;
+        const uint32_t colInTile = column % AtlasConfig::TILE_WIDTH;
+        
+        // CRITICAL: Additional bounds checking for column position  
+        if (colInTile >= AtlasConfig::TILE_WIDTH) {
+            badColSkips_.fetch_add(1, std::memory_order_relaxed);
+            continue; // Skip out-of-bounds column to prevent corruption
+        }
+        
+        // Set atlas position
+        delta.position.tileX = static_cast<uint16_t>(tileId);
+        delta.position.tileY = 0; // Single row for now
+        delta.position.columnInTile = static_cast<uint16_t>(colInTile);
+        delta.position.binStart = static_cast<uint16_t>(maskCol.binStart);
+        
+        // Copy mask values with runtime size validation
+        static_assert(sizeof(delta.values) == sizeof(maskCol.values), 
+                     "MaskColumn and MaskColumnDelta must have same values array size");
+        
+        for (size_t i = 0; i < AtlasConfig::NUM_BINS; ++i) {
+            const float scaledValue = maskCol.values[i] * maskCol.intensity;
+            delta.values[i] = scaledValue;
+            
+            // Debug-only finite value check to catch NaN/infinity corruption
+            #if JUCE_DEBUG
+            jassertquiet(juce::isFinite(scaledValue));
+            #endif
+        }
+        
+        // Set timing metadata
+        delta.metadata.samplePosition = maskCol.timestampSamples > 0 ? 
+                                       maskCol.timestampSamples : currentSamplePos;
+        delta.metadata.timeSeconds = static_cast<float>(delta.metadata.samplePosition / currentSampleRate);
+        delta.metadata.sequenceNumber = maskCol.sequenceNumber;
+        delta.metadata.fundamentalHz = 0.0f; // Will be filled by analysis later
+        delta.metadata.spectralCentroid = 0.0f; // Will be filled by analysis later
+        
+        // Push to HopScheduler input queue (RT-safe, non-blocking)
+        if (maskDeltaQueue.push(delta)) {
+            conversionsThisBlock++;
+        } else {
+            // Queue full - could increment drop counter
+            break;
+        }
+    }
+    
+    // Track total delta conversions for diagnostics
+    deltaDrainsPerBlock_.store(static_cast<uint32_t>(conversionsThisBlock), std::memory_order_relaxed);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

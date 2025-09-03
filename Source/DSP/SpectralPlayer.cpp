@@ -27,6 +27,7 @@ void SpectralPlayer::reset()
     std::fill (ola.begin(),  ola.end(),  0.0f);
     std::fill (norm.begin(), norm.end(), 1e-6f);
     frameCursor = 0; inHopCursor = 0; writePos = 0;
+    framePosition = 0.0f;
 }
 
 void SpectralPlayer::process (juce::AudioBuffer<float>& out)
@@ -73,7 +74,12 @@ void SpectralPlayer::process (juce::AudioBuffer<float>& out)
                 norm[(size_t) idx] += w * w;
             }
 
-            frameCursor = (frameCursor + 1) % model->numFrames();
+            // Advance frame position by respeed amount for playback rate control
+            framePosition += respeed;
+            if (framePosition >= static_cast<float>(model->numFrames())) {
+                framePosition -= static_cast<float>(model->numFrames());
+            }
+            frameCursor = static_cast<int>(framePosition);
         }
 
         const int toCopy = juce::jmin (num - done, hop - inHopCursor);

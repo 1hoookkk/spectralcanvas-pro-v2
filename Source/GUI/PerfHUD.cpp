@@ -184,12 +184,21 @@ PerfHUD::Metrics PerfHUD::sampleMetrics() noexcept
         metrics.cpuPercent = 0.0f; // No CPU monitoring in release builds
 #endif
         
-        // Sample GPU status from renderer if available
+        // Sample GPU status from renderer with safety checks  
         if (gpuRenderer_ && gpuRenderer_->isInitialized()) {
-            metrics.gpuFrameTimeUs = static_cast<uint32_t>(gpuRenderer_->getFrameTime() * 1000.0f);
-            metrics.gpuPeakFrameUs = metrics.gpuFrameTimeUs; // TODO: track peak separately
-            metrics.isWarpMode = false; // TODO: query from D3D11Renderer
-            metrics.deviceOk = gpuRenderer_->checkDeviceStatus() && audioProcessor_.hasActiveRenderer();
+            try {
+                // Safe access to GPU metrics - may fail during device transitions
+                metrics.gpuFrameTimeUs = static_cast<uint32_t>(gpuRenderer_->getFrameTime() * 1000.0f);
+                metrics.gpuPeakFrameUs = metrics.gpuFrameTimeUs; // TODO: track peak separately
+                metrics.isWarpMode = false; // TODO: query from D3D11Renderer
+                metrics.deviceOk = gpuRenderer_->checkDeviceStatus() && audioProcessor_.hasActiveRenderer();
+            } catch (...) {
+                // GPU access failed (device lost, etc.) - use safe defaults
+                metrics.gpuFrameTimeUs = 0;
+                metrics.gpuPeakFrameUs = 0;
+                metrics.isWarpMode = false;
+                metrics.deviceOk = false;
+            }
         } else {
             // No renderer or not initialized
             metrics.gpuFrameTimeUs = 0;
@@ -200,6 +209,11 @@ PerfHUD::Metrics PerfHUD::sampleMetrics() noexcept
         metrics.recoveryCount = 0;
         metrics.lastRecoveryTimestamp = 0;
         metrics.queueDepthGPU = 0;
+        
+        // Sample tripwire counters for heap corruption detection
+        metrics.badBinSkips = audioProcessor_.getBadBinSkips();
+        metrics.badColSkips = audioProcessor_.getBadColSkips();
+        metrics.deltaDrains = audioProcessor_.getDeltaDrainsPerBlock();
         
     } catch (...) {
         // Defensive: never crash the UI thread from metric sampling
@@ -272,6 +286,17 @@ void PerfHUD::renderHUD(juce::Graphics& g, const Metrics& metrics)
     g.drawText(xrunText, MARGIN, y, getWidth() - 2*MARGIN, LINE_HEIGHT,
                juce::Justification::right);
     y += LINE_HEIGHT;
+    
+    // Row 5: Tripwire counters (heap corruption protection)
+    if (metrics.badBinSkips > 0 || metrics.badColSkips > 0 || metrics.deltaDrains > 0) {
+        g.setColour(juce::Colours::red); // Highlight corruption protection in red
+        auto tripwireText = "TW:" + std::to_string(metrics.badBinSkips) + "/" + 
+                           std::to_string(metrics.badColSkips) + " ΔD:" + 
+                           std::to_string(metrics.deltaDrains);
+        g.drawText(tripwireText, MARGIN, y, getWidth() - 2*MARGIN, LINE_HEIGHT,
+                   juce::Justification::left);
+        y += LINE_HEIGHT;
+    }
     
     // Footer: Audio config and toggle hint
     g.setColour(juce::Colours::lightgrey);

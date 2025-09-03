@@ -17,10 +17,20 @@ SpectralCanvasProEditor::SpectralCanvasProEditor(SpectralCanvasProAudioProcessor
     topStrip = std::make_unique<MinimalTopStrip>(audioProcessor.apvts);
     addAndMakeVisible(*topStrip);
     
-    // Create GPU renderer first
+    // Create GPU renderer with safety checks
 #if JUCE_WINDOWS
     renderer = std::make_unique<D3D11Renderer>();
-    renderer->initialize(getTopLevelComponent()->getWindowHandle(), 1200, 800);
+    if (renderer) {
+        // Safe initialization with fallback handling
+        bool initSuccess = renderer->initialize(getTopLevelComponent()->getWindowHandle(), 1200, 800);
+        rendererActive = initSuccess && renderer->isInitialized();
+        
+        if (!rendererActive) {
+            // Log failure but continue - CPU fallback will be used
+            juce::Logger::writeToLog("GPU renderer initialization failed, using CPU fallback");
+            renderer.reset(); // Clean up failed renderer
+        }
+    }
 #endif
 
     // Initialize sample loading infrastructure

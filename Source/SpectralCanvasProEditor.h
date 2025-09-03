@@ -57,6 +57,7 @@ private:
     
     // GPU renderer
     std::unique_ptr<GpuRenderer> renderer;
+    bool rendererActive = false; // Track initialization status for safety
     
     // Sample loading infrastructure
     std::unique_ptr<SampleLoaderService> sampleLoader;
