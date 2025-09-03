@@ -96,7 +96,6 @@ target_sources(SpectralCanvasPro PRIVATE
     Source/DSP/OfflineStftAnalyzer.h
     Source/DSP/OfflineStftAnalyzer.cpp
     Source/DSP/HopScheduler.h
-    Source/DSP/HopScheduler.cpp
     Source/DSP/SpscRingBuffer.h
     
     # GUI components
@@ -129,13 +128,11 @@ target_sources(SpectralCanvasPro PRIVATE
     Source/DSP/SpectralPlayer.h
     Source/DSP/SpectralPlayer.cpp
     
-    # GPU rendering
+    # GPU rendering (core + platform backends gated below)
     Source/Viz/GpuRenderer.h
     Source/Viz/GpuRenderer.cpp
     Source/Viz/RenderThread.h
     Source/Viz/DeviceLostHandler.h
-    Source/Viz/backends/D3D11Renderer.h
-    Source/Viz/backends/D3D11Renderer.cpp
     
     # Shader resources (HLSL files - temporarily excluded from build)
     # Source/Viz/shaders/FullscreenQuad.hlsl
@@ -156,6 +153,13 @@ target_compile_definitions(SpectralCanvasPro
       PHASE4_EXPERIMENT=1
       JUCE_USE_MP3AUDIOFORMAT=1
 )
+
+# Platform-specific GPU backends
+if (WIN32)
+    target_sources(SpectralCanvasPro PRIVATE
+        Source/Viz/backends/D3D11Renderer.h
+        Source/Viz/backends/D3D11Renderer.cpp)
+endif()
 
 # Test build control
 option(ENABLE_TESTS "Build test executables" OFF)
@@ -196,6 +200,7 @@ target_link_libraries(SpectralCanvasPro
       juce::juce_audio_formats
       juce::juce_dsp
       juce::juce_gui_extra
+      juce::juce_opengl
 )
 
 # Windows-specific D3D11 libraries

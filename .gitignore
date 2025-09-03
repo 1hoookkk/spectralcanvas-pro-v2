@@ -82,3 +82,7 @@ CMakeLists_minimal.txt
 # JUCE specific
 JuceLibraryCode/
 Builds/
+
+# Python caches
+__pycache__/
+*.pyc

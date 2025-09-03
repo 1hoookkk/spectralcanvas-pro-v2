@@ -30,6 +30,14 @@ void SpectrogramComponent::setTiledAtlas(std::shared_ptr<TiledAtlas> atlas) noex
     tiledAtlas_ = std::move(atlas);
     if (tiledAtlas_) {
         currentPage_ = tiledAtlas_->getActivePage();
+        if (!currentPage_.isValid()) {
+            // Allocate and activate a page on UI thread for immediate use
+            auto h = tiledAtlas_->allocateFreePage();
+            if (h.isValid()) {
+                tiledAtlas_->activatePage(h);
+                currentPage_ = h;
+            }
+        }
     }
     repaint();
 }
@@ -54,6 +62,28 @@ void SpectrogramComponent::paint(juce::Graphics& g) {
                                juce::AffineTransform::scale(
                                   (float)getWidth()  / (float)cpuImage_.getWidth(),
                                   (float)getHeight() / (float)cpuImage_.getHeight()));
+
+    // Minimal overlay: highlight last painted column on top of CPU image
+    if (lastPaint_.framesLeft > 0 && lastPaint_.values.size() > 0)
+    {
+        const int W = getWidth();
+        const int H = getHeight();
+        const int numBins = (int) lastPaint_.values.size();
+        const int x = (int)((int(lastPaint_.colInTile) - (int)viewportTopLeft_.columnInTile) * W / (int)AtlasConfig::TILE_WIDTH);
+        const float fade = (float) lastPaint_.framesLeft / 30.0f; // ~0.5s at 60fps
+        if (x >= 0 && x < W)
+        {
+            for (int b = 0; b < numBins; ++b)
+            {
+                const float v = lastPaint_.values[(size_t)b];
+                if (v >= 0.999f) continue; // no attenuation → no overlay
+                const int y = H - 1 - (b * H / (int)AtlasConfig::TILE_HEIGHT);
+                const float alpha = juce::jlimit(0.0f, 1.0f, (1.0f - v) * 0.45f * fade);
+                g.setColour(juce::Colours::red.withAlpha(alpha));
+                g.fillRect(x, juce::jmax(0, y-1), 1, 2); // small vertical dashes for visibility
+            }
+        }
+    }
     
     switch (renderMode_) {
         case RenderMode::Legacy:
@@ -375,6 +405,9 @@ void SpectrogramComponent::timerCallback() {
     if (renderMode_ != RenderMode::Legacy) {
         updateAtlasFromQueue();
     }
+
+    // Fade last-paint overlay
+    if (lastPaint_.framesLeft > 0) --lastPaint_.framesLeft;
 }
 
 // ===== Phase 2 helpers =====
@@ -403,6 +436,27 @@ void SpectrogramComponent::beginAnalysis(const juce::AudioBuffer<float>& mono, d
 void SpectrogramComponent::cancelAnalysis()
 {
     // TODO: Wire to analyzer cancellation when ready
+}
+
+void SpectrogramComponent::enqueueCpuColumn(int64_t columnIndex, const float* magnitudes, size_t numBins) noexcept
+{
+    if (magnitudes == nullptr || numBins == 0)
+        return;
+
+    // Initialize image height if not yet set
+    if (cpuBins_ == 0)
+        cpuBins_ = static_cast<int>(numBins);
+
+    ColumnRing::Node n;
+    n.col = columnIndex;
+    n.mags.assign(magnitudes, magnitudes + numBins);
+
+    // Non-blocking push; if full, drop oldest then retry
+    if (!ring_.push(ColumnRing::Node{ n })) {
+        ColumnRing::Node throwaway;
+        (void) ring_.pop(throwaway);
+        (void) ring_.push(std::move(n));
+    }
 }
 
 void SpectrogramComponent::uploadColumnsBudgeted_()
@@ -461,7 +515,19 @@ void SpectrogramComponent::flushCoalescedDeltas_()
     for (int i = 0; i < nb; ++i) d.values[(size_t)i] = coalesced_.values[(size_t)i];
     
     (void)maskDeltaQueue_->push(d); // drop when full (bounded)
+
+    // Mirror paint into atlas for immediate visual feedback (UI thread)
+    if (tiledAtlas_ && currentPage_.isValid()) {
+        AtlasPosition pos = d.position;
+        pos.binStart = 0;
+        tiledAtlas_->writeColumn(currentPage_, pos, d.values, AtlasConfig::NUM_BINS);
+    }
     coalesced_.active = false;
+
+    // Update last-paint overlay (short-lived)
+    lastPaint_.colInTile = d.position.columnInTile;
+    lastPaint_.values.assign(std::begin(d.values), std::begin(d.values) + (int)AtlasConfig::NUM_BINS);
+    lastPaint_.framesLeft = 30; // ~0.5 seconds
 }
 
 void SpectrogramComponent::generateTestColumns(int numSamples, int fftSize, int hop)

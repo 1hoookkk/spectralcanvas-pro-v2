@@ -206,10 +206,17 @@ void OfflineStftAnalyzer::analysisThreadMain() noexcept {
         
         computeSpectralFeatures(magnitudeBuffer_.data(), delta.metadata);
         generateMaskColumn(magnitudeBuffer_.data(), phaseBuffer_.data(), delta);
-        
+
         // Send to output queue (non-blocking)
         if (outputQueue_ && !outputQueue_->push(delta)) {
             // Queue full - could log warning or implement backpressure
+        }
+
+        // Notify UI for progressive CPU spectrogram rendering (best-effort)
+        if (columnCallback_) {
+            const int64_t absoluteCol = static_cast<int64_t>(atlasPos.tileX) * static_cast<int64_t>(AtlasConfig::TILE_WIDTH)
+                                       + static_cast<int64_t>(atlasPos.columnInTile);
+            columnCallback_(absoluteCol, magnitudeBuffer_.data(), NUM_BINS);
         }
         
         // Update position

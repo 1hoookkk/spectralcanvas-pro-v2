@@ -36,6 +36,9 @@ public:
                        int fftSize, int hop);
     // Optional: external cancellation (e.g., on new file)
     void cancelAnalysis();
+
+    // Background-thread safe enqueue of a computed spectral column for CPU progressive image
+    void enqueueCpuColumn(int64_t columnIndex, const float* magnitudes, size_t numBins) noexcept;
     
     // Phase 3 (EDIT): UI → Audio mask deltas
     void setMaskDeltaQueue(MaskDeltaQueue* q) noexcept { maskDeltaQueue_ = q; }
@@ -157,6 +160,10 @@ private:
     PendingDelta coalesced_;
     void flushCoalescedDeltas_(); // push ≤128/frame in timerCallback
     
+    // Short-lived visual overlay of the last painted column (CPU path)
+    struct LastPaint { uint16_t colInTile=0; std::vector<float> values; uint8_t framesLeft=0; };
+    LastPaint lastPaint_;
+    
     // Display parameters
     int brushRadius_ = 8;
     int colormapType_ = 0;
@@ -167,7 +174,7 @@ private:
     float maxTimeSeconds_ = 60.0f;
     
     // Render settings
-    RenderMode renderMode_ = RenderMode::Legacy; // TEMP: force CPU image visible
+    RenderMode renderMode_ = RenderMode::GpuAtlas;
     
     // Performance tracking
     uint32_t frameCounter_ = 0;

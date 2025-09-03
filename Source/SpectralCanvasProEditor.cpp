@@ -55,9 +55,15 @@ SpectralCanvasProEditor::SpectralCanvasProEditor(SpectralCanvasProAudioProcessor
     addAndMakeVisible(loadButton);
     loadButton.onClick = [this]{ loadSampleButtonClicked(); };
     addAndMakeVisible(spectrogram);
-    
+
     // Wire spectrogram to processor's mask delta queue for painting → audio flow
     spectrogram.setMaskDeltaQueue(&audioProcessor.getMaskDeltaQueue());
+
+    // Wire spectrogram to tiled atlas + renderer for GPU path (safe if null)
+    spectrogram.setTiledAtlas(audioProcessor.getTiledAtlas());
+    if (renderer)
+        spectrogram.setGpuRenderer(std::shared_ptr<GpuRenderer>(renderer.get(), [](GpuRenderer*){}));
+    spectrogram.setAtlasUpdateQueue(&audioProcessor.getAtlasUpdateQueue());
     
     // Enable keyboard focus for 'H' key toggle
     setWantsKeyboardFocus(true);
@@ -189,10 +195,25 @@ void SpectralCanvasProEditor::loadSampleButtonClicked()
                 spectrogram.setModel(&audioProcessor.getSpectralModel());
                 spectrogram.setEditableMask(&audioProcessor.getSpectralMask());
                 
-                // **DIAGNOSTIC**: Start spectrogram analysis with loaded audio
-                DBG("[SCP] Editor: starting analysis with file SR=" << sample.sampleRate
-                    << " samples=" << sample.audio.getNumSamples());
-                spectrogram.beginAnalysis(sample.audio, sample.sampleRate, 512, 128);
+                // Start progressive analysis via OfflineStftAnalyzer and stream columns to UI
+                if (auto* analyzer = audioProcessor.getOfflineAnalyzer())
+                {
+                    analyzer->stopAnalysis();
+                    analyzer->setAtlasPosition(AtlasPosition{});
+                    analyzer->setColumnCallback([this](int64_t col, const float* mags, size_t nb){
+                        spectrogram.enqueueCpuColumn(col, mags, nb);
+                    });
+                    if (sample.originalFile.existsAsFile())
+                    {
+                        analyzer->loadAudioFile(sample.originalFile);
+                        analyzer->startAnalysis();
+                    }
+                    else
+                    {
+                        // Fallback to direct UI-only preview if no file handle (buffer-only)
+                        spectrogram.beginAnalysis(sample.audio, sample.sampleRate, 512, 128);
+                    }
+                }
                 
                 spectrogram.repaint();
                 
@@ -250,10 +271,24 @@ void SpectralCanvasProEditor::loadAudioFile(const juce::File& file)
                 spectrogram.setModel(&audioProcessor.getSpectralModel());
                 spectrogram.setEditableMask(&audioProcessor.getSpectralMask());
                 
-                // **DIAGNOSTIC**: Start spectrogram analysis with loaded audio
-                DBG("[SCP] Editor: starting analysis with file SR=" << sample.sampleRate
-                    << " samples=" << sample.audio.getNumSamples());
-                spectrogram.beginAnalysis(sample.audio, sample.sampleRate, 512, 128);
+                // Start progressive analysis via OfflineStftAnalyzer and stream columns to UI
+                if (auto* analyzer = audioProcessor.getOfflineAnalyzer())
+                {
+                    analyzer->stopAnalysis();
+                    analyzer->setAtlasPosition(AtlasPosition{});
+                    analyzer->setColumnCallback([this](int64_t col, const float* mags, size_t nb){
+                        spectrogram.enqueueCpuColumn(col, mags, nb);
+                    });
+                    if (sample.originalFile.existsAsFile())
+                    {
+                        analyzer->loadAudioFile(sample.originalFile);
+                        analyzer->startAnalysis();
+                    }
+                    else
+                    {
+                        spectrogram.beginAnalysis(sample.audio, sample.sampleRate, 512, 128);
+                    }
+                }
                 
                 spectrogram.repaint();
                 

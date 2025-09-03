@@ -60,16 +60,18 @@ void SpectralCanvasProAudioProcessor::prepareToPlay(double sampleRate, int sampl
     // Initialize tiled atlas system
     initializeTiledAtlas();
     
+    // Initialize Phase 4 (HEAR): RT-safe STFT masking
+    hop_.prepare(sampleRate);
+    hop_.setQueue(&maskDeltaQueue);
+    hop_.setAtlas(tiledAtlas_.get(), tiledAtlas_ ? tiledAtlas_->allocateFreePage() : AtlasPageHandle{});
+    hop_.setAtlasUpdateQueue(&atlasUpdateQueue);
+    rt_.prepare(sampleRate, AtlasConfig::FFT_SIZE, AtlasConfig::HOP_SIZE);
+    
     // Set STFT latency based on single-source atlas configuration
     // This accounts for overlap-add reconstruction delay in STFT processing
     const int stftLatency = AtlasConfig::FFT_SIZE - AtlasConfig::HOP_SIZE;
     setLatencySamples(stftLatency);
     jassert(getLatencySamples() == stftLatency);
-    
-    // Initialize Phase 4 (HEAR): RT-safe STFT masking
-    hop_.prepare(sampleRate);
-    hop_.setQueue(&maskDeltaQueue);
-    rt_.prepare(sampleRate, AtlasConfig::FFT_SIZE, AtlasConfig::HOP_SIZE);
     
     // Prepare with JUCE DSP spec
     juce::dsp::ProcessSpec spec;
@@ -604,6 +606,11 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
         }
     }
     
+    // Phase 4: Apply pending mask deltas (bounded) and advance hop
+    hop_.drainAndApply(16);
+    hop_.advance((uint32_t) numSamples);
+    deltaDrainsPerBlock_.store(hop_.drainsPerBlock(), std::memory_order_relaxed);
+
     // Process tiled atlas messages (RT-safe)
     processTiledAtlasMessages();
     
@@ -1087,12 +1094,7 @@ void SpectralCanvasProAudioProcessor::initializeTiledAtlas() noexcept {
         return;
     }
     
-    // Initialize hop scheduler
-    hopScheduler_ = std::make_unique<HopScheduler>();
-    if (!hopScheduler_->initialize(currentSampleRate, maskDeltaQueue, atlasUpdateQueue)) {
-        hopScheduler_.reset();
-        return;
-    }
+    // Phase 4 hop scheduler is initialized in prepareToPlay()
 }
 
 void SpectralCanvasProAudioProcessor::shutdownTiledAtlas() noexcept {
@@ -1101,10 +1103,7 @@ void SpectralCanvasProAudioProcessor::shutdownTiledAtlas() noexcept {
         offlineAnalyzer_.reset();
     }
     
-    if (hopScheduler_) {
-        hopScheduler_->reset();
-        hopScheduler_.reset();
-    }
+    // Phase 4 hop scheduler is managed directly as hop_ member
     
     if (tiledAtlas_) {
         tiledAtlas_->shutdown();
@@ -1113,7 +1112,7 @@ void SpectralCanvasProAudioProcessor::shutdownTiledAtlas() noexcept {
 }
 
 void SpectralCanvasProAudioProcessor::processTiledAtlasMessages() noexcept {
-    if (!hopScheduler_) return;
+    // Phase 4: Using hop_ member instead of hopScheduler_
     
     // Get current audio position
     const uint64_t currentSamplePos = totalSamplesProcessed_.load(std::memory_order_acquire);
@@ -1122,8 +1121,7 @@ void SpectralCanvasProAudioProcessor::processTiledAtlasMessages() noexcept {
     // Convert MaskColumn → MaskColumnDelta and feed to HopScheduler
     convertMaskColumnsToDeltas(currentSamplePos);
     
-    // Process hop-scheduled mask deltas
-    hopScheduler_->processHop(currentSamplePos, hopIndex);
+    // Phase 4 mask delta processing is handled directly in processBlock()
     
     // Process any atlas page management messages
     AtlasPageMessage pageMsg;
@@ -1220,7 +1218,6 @@ void SpectralCanvasProAudioProcessor::convertMaskColumnsToDeltas(uint64_t curren
     }
     
     // Track total delta conversions for diagnostics
-    deltaDrainsPerBlock_.store(static_cast<uint32_t>(conversionsThisBlock), std::memory_order_relaxed);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

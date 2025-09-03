@@ -55,6 +55,10 @@ public:
     // Column streaming parameters
     void setColumnStreamingRate(int columnsPerSecond) noexcept; // Rate limiting for smooth streaming
     void setAtlasPosition(const AtlasPosition& startPosition) noexcept;
+
+    // UI progressive spectrogram callback (background thread safe)
+    using ColumnCallback = std::function<void(int64_t column, const float* mags, size_t numBins)>;
+    void setColumnCallback(ColumnCallback cb) noexcept { columnCallback_ = std::move(cb); }
     
 private:
     // Analysis thread main loop
@@ -116,6 +120,9 @@ private:
     
     // Thread safety helpers
     mutable std::mutex stateMutex_;
+
+    // Optional UI callback target (set from message thread)
+    ColumnCallback columnCallback_;
 };
 
 // Inline performance-critical methods

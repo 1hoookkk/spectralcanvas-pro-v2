@@ -3,6 +3,7 @@
 #include "../Core/AtlasIds.h"
 #include "../Core/MessageBus.h"   // MaskDeltaQueue, MaskColumnDelta
 #include "../Core/MaskAtlas.h"
+#include "../Core/TiledAtlas.h"
 
 class HopScheduler
 {
@@ -17,6 +18,8 @@ public:
     }
 
     void setQueue(MaskDeltaQueue* q) noexcept { q_ = q; }
+    void setAtlas(TiledAtlas* atlas, AtlasPageHandle staging) noexcept { atlas_ = atlas; stagingHandle_ = staging; activeHandle_ = {}; }
+    void setAtlasUpdateQueue(AtlasUpdateQueue* q) noexcept { atlasUpdateQ_ = q; }
 
     inline void drainAndApply(uint32_t maxDeltas = 16) noexcept
     {
@@ -27,9 +30,37 @@ public:
         {
             if ((unsigned)d.position.columnInTile >= (unsigned)AtlasConfig::TILE_WIDTH) continue;
             mask_.writeStagingColumn((int)d.position.columnInTile, d.values);
+
+            // Mirror into tiled atlas staging page for GPU/UI
+            if (atlas_ && stagingHandle_.isValid())
+            {
+                AtlasPosition pos = d.position;
+                pos.binStart = 0;
+                atlas_->writeColumn(stagingHandle_, pos, d.values, AtlasConfig::NUM_BINS);
+            }
             ++applied;
         }
-        if (applied) mask_.flip();
+        if (applied)
+        {
+            mask_.flip();
+            if (atlas_ && stagingHandle_.isValid())
+            {
+                // Flip tiled atlas page and notify UI
+                atlas_->activatePage(stagingHandle_);
+                // Swap handles (simple ping-pong)
+                if (!activeHandle_.isValid()) activeHandle_ = stagingHandle_;
+                auto oldActive = activeHandle_;
+                activeHandle_ = stagingHandle_;
+                stagingHandle_ = oldActive.isValid() ? oldActive : atlas_->allocateFreePage();
+                if (atlasUpdateQ_)
+                {
+                    AtlasUpdate u{};
+                    u.activePageHandle = {};
+                    u.pendingPageHandle = activeHandle_;
+                    atlasUpdateQ_->push(u);
+                }
+            }
+        }
         drains_ = applied;
     }
 
@@ -57,6 +88,12 @@ private:
     uint64_t hopIdx_{0};
 
     MaskDeltaQueue* q_{nullptr};
+    AtlasUpdateQueue* atlasUpdateQ_{nullptr};
     MaskAtlas mask_{};
     uint32_t drains_{0};
+
+    // Tiled atlas mirroring
+    TiledAtlas* atlas_{nullptr};
+    AtlasPageHandle stagingHandle_{};
+    AtlasPageHandle activeHandle_{};
 };
