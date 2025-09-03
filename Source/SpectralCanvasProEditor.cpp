@@ -56,6 +56,9 @@ SpectralCanvasProEditor::SpectralCanvasProEditor(SpectralCanvasProAudioProcessor
     loadButton.onClick = [this]{ loadSampleButtonClicked(); };
     addAndMakeVisible(spectrogram);
     
+    // Wire spectrogram to processor's mask delta queue for painting → audio flow
+    spectrogram.setMaskDeltaQueue(&audioProcessor.getMaskDeltaQueue());
+    
     // Enable keyboard focus for 'H' key toggle
     setWantsKeyboardFocus(true);
     

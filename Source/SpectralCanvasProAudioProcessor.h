@@ -19,6 +19,7 @@
 #include "SpectralPaintProcessor.h"
 #include "DSP/OfflineStftAnalyzer.h"
 #include "DSP/HopScheduler.h"
+#include "DSP/RealtimeSpectral.h"
 #include "Core/TiledAtlas.h"
 
 #ifdef PHASE4_EXPERIMENT
@@ -237,6 +238,10 @@ private:
     // Modern JUCE DSP-based spectral painting processor
     std::unique_ptr<SpectralPaintProcessor> spectralPaintProcessor;
     
+    // Phase 4 (HEAR): RT-safe STFT masking
+    HopScheduler hop_;
+    RealtimeSpectral rt_;
+    
 #ifdef PHASE4_EXPERIMENT
     // Phase 4 experimental oscillator bank and key filter
     dsp::SpectralEngineStub spectralStub;
@@ -350,6 +355,7 @@ private:
 public:
     std::shared_ptr<TiledAtlas> getTiledAtlas() const noexcept { return tiledAtlas_; }
     MaskDeltaQueue& getMaskDeltaQueue() noexcept { return maskDeltaQueue; }
+    uint32_t getDeltaDrainsPerBlock() const noexcept { return hop_.drainsPerBlock(); }
     AtlasUpdateQueue& getAtlasUpdateQueue() noexcept { return atlasUpdateQueue; }
     PageManagementQueue& getPageManagementQueue() noexcept { return pageManagementQueue; }
     OfflineStftAnalyzer* getOfflineAnalyzer() const noexcept { return offlineAnalyzer_.get(); }

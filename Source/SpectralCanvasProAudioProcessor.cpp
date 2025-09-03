@@ -66,6 +66,11 @@ void SpectralCanvasProAudioProcessor::prepareToPlay(double sampleRate, int sampl
     setLatencySamples(stftLatency);
     jassert(getLatencySamples() == stftLatency);
     
+    // Initialize Phase 4 (HEAR): RT-safe STFT masking
+    hop_.prepare(sampleRate);
+    hop_.setQueue(&maskDeltaQueue);
+    rt_.prepare(sampleRate, AtlasConfig::FFT_SIZE, AtlasConfig::HOP_SIZE);
+    
     // Prepare with JUCE DSP spec
     juce::dsp::ProcessSpec spec;
     spec.sampleRate = sampleRate;
@@ -305,6 +310,33 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     
     // These are prepared for future paint integration
     juce::ignoreUnused(brushSize, brushStrength);
+    
+    // Phase 4 (HEAR): RT-safe STFT masking takes priority
+    if (buffer.getNumChannels() > 0) {
+        // Mono processing (use channel 0 as input)
+        auto* inMono = buffer.getReadPointer(0);
+        
+        // Zero all outputs first
+        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+            buffer.clear(ch, 0, numSamples);
+        
+        // Drain mask deltas and apply to staging page
+        hop_.drainAndApply(16);
+        
+        // Process block with current mask column
+        rt_.processBlock(inMono, buffer.getWritePointer(0), numSamples,
+                        hop_.activeMaskCol(hop_.currentColInTile()));
+        
+        // Copy mono output to all channels
+        for (int ch = 1; ch < buffer.getNumChannels(); ++ch)
+            buffer.copyFrom(ch, 0, buffer, 0, 0, numSamples);
+        
+        // Advance hop position
+        hop_.advance(numSamples);
+        
+        wroteAudioFlag_.store(true, std::memory_order_relaxed);
+        return;
+    }
     
     // Snapshot only the params needed for the chosen path (no APVTS lookups here)
     const bool keyFilterOn = keyFilterEnabled_.load(std::memory_order_relaxed);
