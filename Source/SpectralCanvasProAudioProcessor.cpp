@@ -10,6 +10,7 @@ SpectralCanvasProAudioProcessor::SpectralCanvasProAudioProcessor()
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       apvts(*this, nullptr, "Parameters", Params::createParameterLayout())
 {
+    DBG("Processor ctor");
     // Set STFT latency immediately on construction for pluginval compatibility
     // This accounts for overlap-add reconstruction delay in STFT processing
     const int stftLatency = AtlasConfig::FFT_SIZE - AtlasConfig::HOP_SIZE; // 512-128 = 384
@@ -34,6 +35,7 @@ SpectralCanvasProAudioProcessor::~SpectralCanvasProAudioProcessor()
 
 void SpectralCanvasProAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
+    DBG("prepareToPlay(sr=" << sampleRate << ", spb=" << samplesPerBlock << ")");
     currentSampleRate = sampleRate;
     currentBlockSize = samplesPerBlock;
     
@@ -136,22 +138,11 @@ void SpectralCanvasProAudioProcessor::prepareToPlay(double sampleRate, int sampl
 #endif
     
     // Initialize RT-safe parameter smoothers (50ms ramp time for smooth automation)
-    const float rampTimeSec = 0.05f;  // 50ms ramp
-    oscGainSmoother_.reset(sampleRate, rampTimeSec);
-    brushSizeSmoother_.reset(sampleRate, rampTimeSec);
-    brushStrengthSmoother_.reset(sampleRate, rampTimeSec);
-    
-    // Set initial values from current parameters
-    oscGainSmoother_.setCurrentAndTargetValue(oscGain_.load(std::memory_order_relaxed));
-    brushSizeSmoother_.setCurrentAndTargetValue(16.0f);  // Default brush size
-    brushStrengthSmoother_.setCurrentAndTargetValue(0.7f);  // Default brush strength
-    
-    // Initialize smoothed params (50ms ramp time)
     oscGainSmoother_.reset(sampleRate, smoothingTimeSec_);
     brushSizeSmoother_.reset(sampleRate, smoothingTimeSec_);
     brushStrengthSmoother_.reset(sampleRate, smoothingTimeSec_);
     
-    // Seed current + targets from APVTS
+    // Set initial values from current APVTS parameters
     oscGainSmoother_.setCurrentAndTargetValue(getParamFast(Params::ParameterIDs::oscGain));
     brushSizeSmoother_.setCurrentAndTargetValue(getParamFast(Params::ParameterIDs::brushSize));
     brushStrengthSmoother_.setCurrentAndTargetValue(getParamFast(Params::ParameterIDs::brushStrength));
@@ -177,10 +168,17 @@ void SpectralCanvasProAudioProcessor::prepareToPlay(double sampleRate, int sampl
     // Preallocate hybrid buffer for mix mode (avoid RT allocations)
     const int numOutChans = std::max(getTotalNumInputChannels(), getTotalNumOutputChannels());
     hybridBuffer_.setSize(numOutChans, samplesPerBlock);
+    
+    // Initialize RT-safe latency delay line for non-STFT paths (FFT_SIZE - HOP_SIZE)
+    const int latencyDelaySamples = AtlasConfig::FFT_SIZE - AtlasConfig::HOP_SIZE; // 384 samples
+    latencyLine_.setSize(numOutChans, latencyDelaySamples);
+    latencyLine_.clear();
+    latencyWritePos_ = 0;
 }
 
 void SpectralCanvasProAudioProcessor::releaseResources()
 {
+    DBG("releaseResources()");
     if (spectralEngine)
         spectralEngine->reset();
         
@@ -258,7 +256,11 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     juce::ScopedNoDenormals noDenormals;
     
     const int numSamples = buffer.getNumSamples();
-    buffer.clear(); // clear once at the top
+    
+    // Early exit for zero-length buffers to prevent crashes
+    if (numSamples <= 0 || buffer.getNumChannels() <= 0) {
+        return;
+    }
     
     // RT-safe perf counters: no clocks on audio thread
     lastBlockSize_.store(numSamples, std::memory_order_relaxed);
@@ -284,7 +286,9 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     }
 
     // Check if spectral pipeline should handle audio
-    if (spectralReady && spectralModel.isReady())
+    // Use double-checked locking to avoid race conditions during model access
+    const bool spectralPathReady = spectralReady && spectralModel.isReady();
+    if (spectralPathReady && spectralModel.isReady())
     {
         currentPath_.store(AudioPath::SpectralResynthesis, std::memory_order_relaxed);
         spectralPlayer.process(buffer);
@@ -294,7 +298,7 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     
     // Initialize write detection for this block
     wroteAudioFlag_.store(false, std::memory_order_relaxed);
-    
+
 #if PHASE4_DEBUG_TAP
     // Record queue address on audio thread for integrity checking
     debugTap_.queueAddrOnAudio.store(reinterpret_cast<uintptr_t>(&maskColumnQueue), std::memory_order_relaxed);
@@ -314,31 +318,33 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     juce::ignoreUnused(brushSize, brushStrength);
     
     // Phase 4 (HEAR): RT-safe STFT masking takes priority
-    if (buffer.getNumChannels() > 0) {
-        // Mono processing (use channel 0 as input)
-        auto* inMono = buffer.getReadPointer(0);
-        
-        // Zero all outputs first
-        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
-            buffer.clear(ch, 0, numSamples);
-        
-        // Drain mask deltas and apply to staging page
-        hop_.drainAndApply(16);
-        
-        // Process block with current mask column
-        rt_.processBlock(inMono, buffer.getWritePointer(0), numSamples,
-                        hop_.activeMaskCol(hop_.currentColInTile()));
-        
-        // Copy mono output to all channels
-        for (int ch = 1; ch < buffer.getNumChannels(); ++ch)
-            buffer.copyFrom(ch, 0, buffer, 0, 0, numSamples);
-        
-        // Advance hop position
-        hop_.advance(numSamples);
-        
-        wroteAudioFlag_.store(true, std::memory_order_relaxed);
-        return;
+    if (buffer.getNumChannels() <= 0) {
+        return; // Early exit for invalid channel count
     }
+    
+    // Mono processing (use channel 0 as input)
+    auto* inMono = buffer.getReadPointer(0);
+    
+    // Zero all outputs first
+    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+        buffer.clear(ch, 0, numSamples);
+    
+    // Drain mask deltas and apply to staging page
+    hop_.drainAndApply(16);
+    
+    // Process block with current mask column
+    rt_.processBlock(inMono, buffer.getWritePointer(0), numSamples,
+                    hop_.activeMaskCol(hop_.currentColInTile()));
+    
+    // Copy mono output to all channels
+    for (int ch = 1; ch < buffer.getNumChannels(); ++ch)
+        buffer.copyFrom(ch, 0, buffer, 0, 0, numSamples);
+    
+    // Advance hop position
+    hop_.advance(numSamples);
+    
+    wroteAudioFlag_.store(true, std::memory_order_relaxed);
+    return;
     
     // Snapshot only the params needed for the chosen path (no APVTS lookups here)
     const bool keyFilterOn = keyFilterEnabled_.load(std::memory_order_relaxed);
@@ -349,8 +355,10 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     // Hybrid mode: mix resynthesis and Phase4 synth
     if (mode == 2 && resReady)
     {
-        // 1) Render resynthesis into main buffer
-        spectralPlayer.process(buffer);
+        // 1) Render resynthesis into main buffer (double-check model is still ready)
+        if (spectralModel.isReady()) {
+            spectralPlayer.process(buffer);
+        }
 
         // 2) Render Phase4 synth into hybridBuffer_
         hybridBuffer_.clear();
@@ -463,6 +471,7 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
             
             // TestFeeder always writes (direct tone)
             wroteAudioFlag_.store(true, std::memory_order_relaxed);
+            applyLatencyDelayIfNeeded(buffer); // align with reported latency
             return;
         }
 
@@ -476,9 +485,6 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
             SampleMessage sampleMsg;
             while (sampleQueue.pop(sampleMsg))
             {
-                // Debug: Log that we're processing a sample message
-                juce::Logger::writeToLog("Audio Thread: Popped a message with handle " + juce::String(sampleMsg.handle));
-                
                 if (sampleMsg.isValid())
                 {
                     auto& memSys = RealtimeMemorySystem::getInstance();
@@ -488,16 +494,7 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
                         currentSample = *view;
                         currentSampleHandle = sampleMsg.handle;
                         samplePosition = 0; // Reset playback
-                        juce::Logger::writeToLog("Audio Thread: Sample activated for playback");
                     }
-                    else
-                    {
-                        juce::Logger::writeToLog("Audio Thread: Failed to lookup sample handle");
-                    }
-                }
-                else
-                {
-                    juce::Logger::writeToLog("Audio Thread: Invalid sample message received");
                 }
             }
             
@@ -542,45 +539,13 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
             // Continue Phase4 synthesis
             spectralStub.process(buffer, oscGain);
             
-            // DIAGNOSTIC: Force-audible chirp to prove Phase4 branch executes
-            #ifndef PHASE4_DIAG_CHIRP
-            #define PHASE4_DIAG_CHIRP 1
-            #endif
-            
-            #if PHASE4_DIAG_CHIRP
-            // If buffer is still silent, emit a -36 dB sine for 120 ms every second
-            static int   chirpSamples = 0;
-            static float chirpPhase   = 0.0f;
-            const int sr  = (int)getSampleRate();
-            const int N   = numSamples;
-            float currentRms = buffer.getNumChannels() > 0 ? buffer.getRMSLevel(0, 0, N) : 0.0f;
-            bool needChirp = (currentRms < 1.0e-6f);
-            
-            if (needChirp) {
-                const int period = sr;                      // 1 second
-                const int dur    = (int)(0.12 * sr);       // 120 ms audible blip
-                chirpSamples = (chirpSamples + N) % period;
-                if (chirpSamples < dur) {
-                    const float gain = 0.0158f;            // ~ -36 dB
-                    const float inc  = juce::MathConstants<float>::twoPi * 440.0f / (float)sr;
-                    for (int n = 0; n < N; ++n) {
-                        chirpPhase += inc; 
-                        if (chirpPhase >= juce::MathConstants<float>::twoPi) 
-                            chirpPhase -= juce::MathConstants<float>::twoPi;
-                        const float s = std::sin(chirpPhase) * gain;
-                        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
-                            buffer.getWritePointer(ch)[n] += s;
-                    }
-                }
-            }
-            #endif
-            
             // Mark "wrote" only if buffer has anything > ~ -120 dBFS
             const float rms = buffer.getNumChannels() > 0
                 ? buffer.getRMSLevel(0, 0, numSamples) : 0.0f;
             if (rms > 1.0e-6f)
                 wroteAudioFlag_.store(true, std::memory_order_relaxed);
 #endif
+            applyLatencyDelayIfNeeded(buffer); // align with reported latency
             return;
         }
         
@@ -599,9 +564,11 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
                 // Check if audio was generated
                 const float rms = buffer.getNumChannels() > 0
                     ? buffer.getRMSLevel(0, 0, numSamples) : 0.0f;
-                if (rms > 1.0e-6f)
+                if (rms > 1.0e-6f) {
                     wroteAudioFlag_.store(true, std::memory_order_relaxed);
+                }
             }
+            applyLatencyDelayIfNeeded(buffer); // align with reported latency
             return;
         }
     }
@@ -636,44 +603,31 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     publishCanvasSnapshot();
 }
 
-// Minimal fallback beep generator (RT-safe)
+// RT-safe fallback beep generator (220Hz A3 tone)
 void SpectralCanvasProAudioProcessor::fallbackBeep(juce::AudioBuffer<float>& buffer) noexcept
 {
-    static float ph = 0.0f;
-    const float inc = float(2.0 * juce::MathConstants<double>::pi * 220.0 / getSampleRate());
-    const int ns = buffer.getNumSamples();
-    for (int n = 0; n < ns; ++n) {
-        ph += inc; 
-        if (ph > juce::MathConstants<float>::twoPi) 
-            ph -= juce::MathConstants<float>::twoPi;
-        const float s = 0.02f * std::sin(ph);
+    static float phase = 0.0f;
+    const float phaseIncrement = 220.0f * juce::MathConstants<float>::twoPi / static_cast<float>(getSampleRate());
+    const float amplitude = 0.05f; // Balanced volume
+    const int numSamples = buffer.getNumSamples();
+    
+    for (int n = 0; n < numSamples; ++n) {
+        const float sample = std::sin(phase) * amplitude;
+        
         for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
-            buffer.getWritePointer(ch)[n] += s;
+            buffer.getWritePointer(ch)[n] += sample;
+            
+        phase += phaseIncrement;
+        if (phase >= juce::MathConstants<float>::twoPi)
+            phase -= juce::MathConstants<float>::twoPi;
     }
 }
 
-// Safety fallback audio generator (RT-safe)
+// Compatibility wrapper for legacy interface
 void SpectralCanvasProAudioProcessor::generateFallbackBeep(juce::AudioBuffer<float>& buffer, int numSamples) noexcept
 {
-    static float phase = 0.0f;
-    const float frequency = 220.0f; // A3 note
-    const float phaseIncrement = frequency * 2.0f * juce::MathConstants<float>::pi / static_cast<float>(currentSampleRate);
-    const float amplitude = 0.1f; // Moderate volume
-    
-    for (int sample = 0; sample < numSamples; ++sample)
-    {
-        const float sampleValue = std::sin(phase) * amplitude;
-        
-        // Write to all output channels
-        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
-        {
-            buffer.setSample(channel, sample, sampleValue);
-        }
-        
-        phase += phaseIncrement;
-        if (phase >= 2.0f * juce::MathConstants<float>::pi)
-            phase -= 2.0f * juce::MathConstants<float>::pi;
-    }
+    juce::ignoreUnused(numSamples); // buffer.getNumSamples() is authoritative
+    fallbackBeep(buffer);
 }
 
 #ifdef PHASE4_EXPERIMENT
@@ -970,21 +924,16 @@ void SpectralCanvasProAudioProcessor::generateImmediateAudioFeedback()
 
 bool SpectralCanvasProAudioProcessor::pushMaskColumn(const MaskColumn& mask)
 {
-    // DEBUG: Log that pushMaskColumn is being called
     // RT-SAFE: Track push attempts with atomic counter
     pushMaskAttempts_.fetch_add(1, std::memory_order_relaxed);
     
-    // TESTING: Temporarily bypass path check to force data through
-    /*
     // Only push when Phase4 is active - double-check path state
     if (getCurrentPath() != AudioPath::Phase4Synth) {
         // RT-SAFE: Count rejections for HUD display
         pushMaskRejects_.fetch_add(1, std::memory_order_relaxed);
         return false; // Silently ignore when not in Phase4 mode
     }
-    */
     
-    // RT-SAFE: Proceeding to queue - no logging
     
 #if PHASE4_DEBUG_TAP
     // Create enhanced column with debug sequence
@@ -1065,10 +1014,11 @@ SpectralCanvasProAudioProcessor::PerformanceMetrics SpectralCanvasProAudioProces
 
 void SpectralCanvasProAudioProcessor::updateReportedLatency(int samples) noexcept
 {
-    latencySamples_.store(samples, std::memory_order_release);
-    // Keep JUCE internal state in sync for host compatibility
-    AudioProcessor::setLatencySamples(samples);
-    DBG("Spectral: updateReportedLatency -> " << samples);
+    juce::ignoreUnused(samples);
+    // Ensure latency matches STFT configuration (FFT_SIZE - HOP_SIZE)
+    const int stftLatency = AtlasConfig::FFT_SIZE - AtlasConfig::HOP_SIZE; // 384 samples
+    AudioProcessor::setLatencySamples(stftLatency);
+    latencySamples_.store(stftLatency, std::memory_order_release);
 }
 
 std::shared_ptr<const SpectralCanvasProAudioProcessor::CanvasSnapshot> SpectralCanvasProAudioProcessor::getCanvasSnapshot() const
@@ -1157,7 +1107,6 @@ void SpectralCanvasProAudioProcessor::processTiledAtlasMessages() noexcept {
     
     // Get current audio position
     const uint64_t currentSamplePos = totalSamplesProcessed_.load(std::memory_order_acquire);
-    const uint32_t hopIndex = static_cast<uint32_t>(currentSamplePos / SpectralEngine::HOP_SIZE);
     
     // Convert MaskColumn → MaskColumnDelta and feed to HopScheduler
     convertMaskColumnsToDeltas(currentSamplePos);
@@ -1259,6 +1208,50 @@ void SpectralCanvasProAudioProcessor::convertMaskColumnsToDeltas(uint64_t curren
     }
     
     // Track total delta conversions for diagnostics
+}
+
+// RT-safe latency delay application for non-STFT paths
+void SpectralCanvasProAudioProcessor::applyLatencyDelayIfNeeded(juce::AudioBuffer<float>& buffer) noexcept
+{
+    // Only apply delay if we have a configured latency line
+    if (latencyLine_.getNumSamples() == 0 || latencyLine_.getNumChannels() == 0) {
+        return; // No delay line configured
+    }
+    
+    const int numSamples = buffer.getNumSamples();
+    const int numChannels = juce::jmin(buffer.getNumChannels(), latencyLine_.getNumChannels());
+    const int delaySize = latencyLine_.getNumSamples(); // Should be 384 samples
+    
+    // Process each channel independently
+    for (int ch = 0; ch < numChannels; ++ch) {
+        const float* input = buffer.getReadPointer(ch);
+        float* output = buffer.getWritePointer(ch);
+        float* delayBuffer = latencyLine_.getWritePointer(ch);
+        
+        // Apply circular buffer delay (RT-safe, no allocations)
+        int writePos = latencyWritePos_;
+        for (int n = 0; n < numSamples; ++n) {
+            // Read delayed sample from circular buffer
+            const float delayedSample = delayBuffer[writePos];
+            
+            // Write current input to delay buffer
+            delayBuffer[writePos] = input[n];
+            
+            // Output the delayed sample
+            output[n] = std::isfinite(delayedSample) ? delayedSample : 0.0f;
+            
+            // Advance write position (circular)
+            writePos = (writePos + 1) % delaySize;
+        }
+    }
+    
+    // Update shared write position after processing all channels
+    latencyWritePos_ = (latencyWritePos_ + numSamples) % delaySize;
+    
+    // Clear any extra channels that don't have delay processing
+    for (int ch = numChannels; ch < buffer.getNumChannels(); ++ch) {
+        buffer.clear(ch, 0, numSamples);
+    }
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
