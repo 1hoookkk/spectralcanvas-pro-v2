@@ -60,6 +60,10 @@ public:
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
     
+    // Override latency reporting with atomic backing for thread safety
+    int getLatencySamples() const noexcept { return latencySamples_.load(std::memory_order_acquire); }
+    void updateReportedLatency(int samples) noexcept;
+    
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
     void setCurrentProgram(int index) override { juce::ignoreUnused(index); }
@@ -103,10 +107,34 @@ public:
     };
     PerformanceMetrics getPerformanceMetrics() const;
     
+    // Lock-free GUI snapshot for thread-safe paint operations
+    struct CanvasSnapshot
+    {
+        PerformanceMetrics metrics;
+        AudioPath currentPath = AudioPath::TestFeeder;
+        bool wroteAudioFlag = false;
+        double sampleRate = 48000.0;
+        int blockSize = 512;
+        
+        #ifdef PHASE4_EXPERIMENT
+        int activeBins = 0;
+        int totalBins = 257;
+        uint64_t maskPushCount = 0;
+        uint64_t maskDropCount = 0;
+        float maxMagnitude = 0.0f;
+        uint64_t phase4Blocks = 0;
+        #endif
+        
+        // Timestamp for freshness validation
+        double timestampMs = 0.0;
+    };
+    
+    std::shared_ptr<const CanvasSnapshot> getCanvasSnapshot() const;
+    void publishCanvasSnapshot() const;
+    
     // Tripwire counter access for PerfHUD
     uint32_t getBadBinSkips() const noexcept { return badBinSkips_.load(std::memory_order_relaxed); }
     uint32_t getBadColSkips() const noexcept { return badColSkips_.load(std::memory_order_relaxed); }
-    uint32_t getDeltaDrainsPerBlock() const noexcept { return deltaDrainsPerBlock_.load(std::memory_order_relaxed); }
     
     // Perf HUD helpers (non-RT consumers read these)
     void collectPerfCounters(uint64_t& outTotalBlocks,
@@ -298,7 +326,6 @@ private:
     // Tripwire counters for heap corruption detection
     std::atomic<uint32_t> badBinSkips_{0};      // Invalid bin count detections
     std::atomic<uint32_t> badColSkips_{0};      // Invalid column position detections  
-    std::atomic<uint32_t> deltaDrainsPerBlock_{0}; // Delta conversions per audio block
     
     // RT-safe diagnostic counters (no logging in RT paths)
     std::atomic<uint64_t> pushMaskAttempts_{0};
@@ -343,7 +370,6 @@ private:
     // Tiled atlas system components
     std::shared_ptr<TiledAtlas> tiledAtlas_;
     std::unique_ptr<OfflineStftAnalyzer> offlineAnalyzer_;
-    std::unique_ptr<HopScheduler> hopScheduler_;
     
     // Atlas integration methods
     void initializeTiledAtlas() noexcept;
@@ -366,5 +392,10 @@ public:
 private:
     // Current processing position (Phase 1 completion)
     std::atomic<uint32_t> currentColumnIndex_{0};
+    
+    // Thread-safe latency and GUI snapshot storage
+    mutable std::atomic<int> latencySamples_{384}; // Default: FFT_SIZE - HOP_SIZE
+    mutable std::atomic<std::shared_ptr<const CanvasSnapshot>> canvasSnapshot_{nullptr};
+    
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectralCanvasProAudioProcessor)
 };

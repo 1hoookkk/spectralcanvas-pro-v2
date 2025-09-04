@@ -13,7 +13,7 @@ SpectralCanvasProAudioProcessor::SpectralCanvasProAudioProcessor()
     // Set STFT latency immediately on construction for pluginval compatibility
     // This accounts for overlap-add reconstruction delay in STFT processing
     const int stftLatency = AtlasConfig::FFT_SIZE - AtlasConfig::HOP_SIZE; // 512-128 = 384
-    setLatencySamples(stftLatency);
+    updateReportedLatency(stftLatency);
 }
 
 SpectralCanvasProAudioProcessor::~SpectralCanvasProAudioProcessor()
@@ -70,7 +70,7 @@ void SpectralCanvasProAudioProcessor::prepareToPlay(double sampleRate, int sampl
     // Set STFT latency based on single-source atlas configuration
     // This accounts for overlap-add reconstruction delay in STFT processing
     const int stftLatency = AtlasConfig::FFT_SIZE - AtlasConfig::HOP_SIZE;
-    setLatencySamples(stftLatency);
+    updateReportedLatency(stftLatency);
     jassert(getLatencySamples() == stftLatency);
     
     // Prepare with JUCE DSP spec
@@ -631,6 +631,9 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
         silenceBlockCount_.store(0, std::memory_order_relaxed);
     }
 #endif
+
+    // Publish snapshot for thread-safe GUI access (call at end of audio processing)
+    publishCanvasSnapshot();
 }
 
 // Minimal fallback beep generator (RT-safe)
@@ -1058,6 +1061,44 @@ SpectralCanvasProAudioProcessor::PerformanceMetrics SpectralCanvasProAudioProces
     metrics.xrunCount = xrunCount_.load(std::memory_order_relaxed);
     
     return metrics;
+}
+
+void SpectralCanvasProAudioProcessor::updateReportedLatency(int samples) noexcept
+{
+    latencySamples_.store(samples, std::memory_order_release);
+    // Keep JUCE internal state in sync for host compatibility
+    AudioProcessor::setLatencySamples(samples);
+    DBG("Spectral: updateReportedLatency -> " << samples);
+}
+
+std::shared_ptr<const SpectralCanvasProAudioProcessor::CanvasSnapshot> SpectralCanvasProAudioProcessor::getCanvasSnapshot() const
+{
+    return std::atomic_load_explicit(&canvasSnapshot_, std::memory_order_acquire);
+}
+
+void SpectralCanvasProAudioProcessor::publishCanvasSnapshot() const
+{
+    auto snapshot = std::make_shared<CanvasSnapshot>();
+    
+    // Populate with current processor state
+    snapshot->timestampMs = juce::Time::getMillisecondCounterHiRes();
+    snapshot->metrics = getPerformanceMetrics();
+    snapshot->currentPath = getCurrentPath();
+    snapshot->wroteAudioFlag = getWroteAudioFlag();
+    snapshot->sampleRate = getSampleRate();
+    snapshot->blockSize = getBlockSize();
+    
+    #ifdef PHASE4_EXPERIMENT
+    snapshot->activeBins = getActiveBinCount();
+    snapshot->totalBins = getNumBins();
+    snapshot->maskPushCount = getMaskPushCount();
+    snapshot->maskDropCount = getMaskDropCount();
+    snapshot->maxMagnitude = getMaxMagnitude();
+    snapshot->phase4Blocks = getPhase4Blocks();
+    #endif
+    
+    // Atomically publish the snapshot
+    std::atomic_store_explicit(&canvasSnapshot_, snapshot, std::memory_order_release);
 }
 
 bool SpectralCanvasProAudioProcessor::pushPaintEvent(float y, float intensity, uint32_t timestampMs) noexcept
