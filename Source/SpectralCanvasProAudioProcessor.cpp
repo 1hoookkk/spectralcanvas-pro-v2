@@ -200,9 +200,6 @@ void SpectralCanvasProAudioProcessor::suspendProcessing(bool shouldBeSuspended)
     DBG("[reactivate] suspendProcessing=" << (shouldBeSuspended ? "true" : "false"));
     
     if (shouldBeSuspended) {
-        // Stop hop scheduler cleanly
-        hop_.reset();
-        
         // Reset SPSC queues to prevent stale data on reactivation
         maskDeltaQueue.clear();
         atlasUpdateQueue.clear();

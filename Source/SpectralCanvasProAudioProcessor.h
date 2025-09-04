@@ -49,7 +49,7 @@ public:
     // AudioProcessor interface
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
-    void suspendProcessing(bool shouldBeSuspended) override;
+    void suspendProcessing(bool shouldBeSuspended);
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) noexcept override;
     
     juce::AudioProcessorEditor* createEditor() override;
