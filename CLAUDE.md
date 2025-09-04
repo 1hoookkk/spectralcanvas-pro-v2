@@ -174,3 +174,26 @@ Essential reading before major changes:
 **Ready for Next Phase**: System is now fully operational with real-time STFT masking
 
 Remember: This is a passion project focused on making spectral manipulation immediate, musical, and expressive. Every decision should serve that goal while maintaining uncompromising RT-safety.
+
+## DSP Expert Knowledge System
+
+For advanced DSP theory, algorithm guidance, and RT-safety patterns, use the curated knowledge system:
+
+**Quick Access:**
+```markdown
+Task: dsp-knowledge, "How should I implement overlap-add for STFT reconstruction?"
+Task: dsp-knowledge, "What windowing function minimizes spectral leakage for masking?"
+Task: dsp-knowledge, "RT-safe filter coefficient updates in processBlock?"
+```
+
+**Knowledge Sources:**
+- **Julius O. Smith CCRMA** (🏆 Gold Standard): Mathematical foundations for FFT, STFT, filters
+- **Expert DSP Textbooks**: Practical implementations and RT patterns
+- **SpectralCanvasPro Integration**: Project-specific guidance for STFT masking pipeline
+
+**Available Topics:** FFT/STFT processing, windowing functions, phase vocoders, filter design, RT-safety patterns, latency management, denormal handling, JUCE integration patterns
+
+The knowledge system automatically grounds technical decisions in authoritative sources while maintaining SpectralCanvasPro's RT-safety requirements.
+## Sessions System Behaviors
+
+@CLAUDE.sessions.md

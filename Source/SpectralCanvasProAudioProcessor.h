@@ -61,8 +61,7 @@ public:
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
     
-    // CANNOT OVERRIDE: getLatencySamples() is not virtual in JUCE AudioProcessor
-    // Must rely solely on base class setLatencySamples() calls
+    // Custom latency reporting - uses JUCE base class getLatencySamples()
     void updateReportedLatency(int samples) noexcept;
     
     int getNumPrograms() override { return 1; }
@@ -130,7 +129,38 @@ public:
         double timestampMs = 0.0;
     };
     
-    std::shared_ptr<const CanvasSnapshot> getCanvasSnapshot() const;
+    // Double-buffered snapshot bus - no shared_ptr atomics, no heap churn, no races  
+    class SnapshotBus {
+    public:
+        // Producer (audio/hop thread): write into the "next" buffer, then publish
+        void publish(const CanvasSnapshot& s) noexcept {
+            const uint32_t next = (index_.load(std::memory_order_relaxed) ^ 1u);
+            buffers_[next] = s; // copy; avoid allocations in RT by pre-sizing path if needed
+            // Publish: bump sequence with buffer index in LSB so readers can verify
+            const uint64_t seq = seq_.load(std::memory_order_relaxed);
+            seq_.store(((seq + 1ull) & ~1ull) | next, std::memory_order_release);
+            index_.store(next, std::memory_order_relaxed);
+        }
+
+        // Consumer (GUI paint): read a consistent snapshot with retry
+        bool tryLoad(CanvasSnapshot& out) const noexcept {
+            for (int tries = 0; tries < 3; ++tries) {
+                const uint64_t s1 = seq_.load(std::memory_order_acquire);
+                const uint32_t i  = static_cast<uint32_t>(s1 & 1ull);
+                out = buffers_[i]; // copy
+                const uint64_t s2 = seq_.load(std::memory_order_acquire);
+                if (s1 == s2) return true; // no publish happened mid-read
+            }
+            return false;
+        }
+
+    private:
+        mutable CanvasSnapshot buffers_[2];
+        std::atomic<uint32_t> index_{0};
+        std::atomic<uint64_t> seq_{0}; // seq || index(LSB)
+    };
+    
+    bool getCanvasSnapshot(CanvasSnapshot& out) const;
     void publishCanvasSnapshot() const;
     
     // Tripwire counter access for PerfHUD
@@ -403,7 +433,7 @@ private:
     
     // Thread-safe latency and GUI snapshot storage
     mutable std::atomic<int> latencySamples_{AtlasConfig::FFT_SIZE - AtlasConfig::HOP_SIZE}; // Default: FFT_SIZE - HOP_SIZE
-    mutable std::atomic<std::shared_ptr<const CanvasSnapshot>> canvasSnapshot_{nullptr};
+    mutable SnapshotBus snapshotBus_;
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectralCanvasProAudioProcessor)
 };

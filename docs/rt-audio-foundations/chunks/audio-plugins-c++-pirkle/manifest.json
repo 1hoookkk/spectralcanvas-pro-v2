@@ -1,0 +1,667 @@
+{
+  "source_pdf": "..\\sessions\\knowledge\\pdf\\Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room.pdf",
+  "title": "Audio Plugins C++ (Pirkle)",
+  "extracted_with": "pdfminer.six",
+  "target_words": 2800,
+  "overlap_words": 200,
+  "created_utc": "2025-09-04T06:54:38.557519Z",
+  "chunks": [
+    {
+      "index": 1,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk01_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 543
+    },
+    {
+      "index": 2,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk02_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 4650
+    },
+    {
+      "index": 3,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk03_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 4296
+    },
+    {
+      "index": 4,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk04_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 6491
+    },
+    {
+      "index": 5,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk05_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 3251
+    },
+    {
+      "index": 6,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk06_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 3317
+    },
+    {
+      "index": 7,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk07_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2741
+    },
+    {
+      "index": 8,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk08_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 8000
+    },
+    {
+      "index": 9,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk09_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 8417
+    },
+    {
+      "index": 10,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk10_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 1454
+    },
+    {
+      "index": 11,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk11_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2650
+    },
+    {
+      "index": 12,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk12_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2670
+    },
+    {
+      "index": 13,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk13_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2656
+    },
+    {
+      "index": 14,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk14_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 4204
+    },
+    {
+      "index": 15,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk15_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2883
+    },
+    {
+      "index": 16,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk16_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2617
+    },
+    {
+      "index": 17,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk17_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2406
+    },
+    {
+      "index": 18,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk18_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 1834
+    },
+    {
+      "index": 19,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk19_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2699
+    },
+    {
+      "index": 20,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk20_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2480
+    },
+    {
+      "index": 21,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk21_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2579
+    },
+    {
+      "index": 22,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk22_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2554
+    },
+    {
+      "index": 23,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk23_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2627
+    },
+    {
+      "index": 24,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk24_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2613
+    },
+    {
+      "index": 25,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk25_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2660
+    },
+    {
+      "index": 26,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk26_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2565
+    },
+    {
+      "index": 27,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk27_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2505
+    },
+    {
+      "index": 28,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk28_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2718
+    },
+    {
+      "index": 29,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk29_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2671
+    },
+    {
+      "index": 30,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk30_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2594
+    },
+    {
+      "index": 31,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk31_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 1756
+    },
+    {
+      "index": 32,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk32_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2732
+    },
+    {
+      "index": 33,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk33_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2796
+    },
+    {
+      "index": 34,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk34_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2294
+    },
+    {
+      "index": 35,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk35_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2718
+    },
+    {
+      "index": 36,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk36_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2589
+    },
+    {
+      "index": 37,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk37_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 3780
+    },
+    {
+      "index": 38,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk38_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 5230
+    },
+    {
+      "index": 39,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk39_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 5508
+    },
+    {
+      "index": 40,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk40_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 3831
+    },
+    {
+      "index": 41,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk41_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2705
+    },
+    {
+      "index": 42,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk42_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2509
+    },
+    {
+      "index": 43,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk43_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2632
+    },
+    {
+      "index": 44,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk44_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2740
+    },
+    {
+      "index": 45,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk45_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 715
+    },
+    {
+      "index": 46,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk46_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2666
+    },
+    {
+      "index": 47,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk47_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2770
+    },
+    {
+      "index": 48,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk48_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2657
+    },
+    {
+      "index": 49,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk49_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2671
+    },
+    {
+      "index": 50,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk50_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2785
+    },
+    {
+      "index": 51,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk51_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2538
+    },
+    {
+      "index": 52,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk52_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 1508
+    },
+    {
+      "index": 53,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk53_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2589
+    },
+    {
+      "index": 54,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk54_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 1724
+    },
+    {
+      "index": 55,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk55_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2723
+    },
+    {
+      "index": 56,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk56_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2654
+    },
+    {
+      "index": 57,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk57_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2390
+    },
+    {
+      "index": 58,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk58_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2611
+    },
+    {
+      "index": 59,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk59_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2675
+    },
+    {
+      "index": 60,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk60_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2626
+    },
+    {
+      "index": 61,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk61_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2794
+    },
+    {
+      "index": 62,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk62_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2391
+    },
+    {
+      "index": 63,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk63_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2790
+    },
+    {
+      "index": 64,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk64_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2411
+    },
+    {
+      "index": 65,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk65_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2650
+    },
+    {
+      "index": 66,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk66_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 1736
+    },
+    {
+      "index": 67,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk67_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 5234
+    },
+    {
+      "index": 68,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk68_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 4797
+    },
+    {
+      "index": 69,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk69_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 5016
+    },
+    {
+      "index": 70,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk70_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 2346
+    },
+    {
+      "index": 71,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk71_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 1750
+    },
+    {
+      "index": 72,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk72_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 3240
+    },
+    {
+      "index": 73,
+      "file": "Designing Audio Effect Plug-Ins in C++_ With Digital Audio Signal Processing Theory - PDF Room_chunk73_p1-560.md",
+      "approx_pages": [
+        1,
+        560
+      ],
+      "word_count": 3404
+    }
+  ]
+}

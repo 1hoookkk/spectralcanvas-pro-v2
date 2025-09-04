@@ -15,6 +15,6 @@ namespace atlas
     {
         static_assert(sizeof(dst) == kColumnBytes, "dst column size != NUM_BINS floats");
         static_assert(sizeof(src) == kColumnBytes, "src column size != NUM_BINS floats");
-        std::memcpy(&dst[0], &src[0], kColumnBytes);
+        std::memcpy(static_cast<void*>(&dst), static_cast<const void*>(&src), kColumnBytes);
     }
 }

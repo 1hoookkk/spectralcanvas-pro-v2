@@ -1,0 +1,280 @@
+{
+  "source_pdf": "..\\sessions\\knowledge\\pdf\\Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435.pdf",
+  "title": "Digital Audio DSP (Z\u00f6lzer)",
+  "extracted_with": "pdfminer.six",
+  "target_words": 2800,
+  "overlap_words": 200,
+  "created_utc": "2025-09-04T06:55:04.456763Z",
+  "chunks": [
+    {
+      "index": 1,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk01_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 1445
+    },
+    {
+      "index": 2,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk02_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 9005
+    },
+    {
+      "index": 3,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk03_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 13289
+    },
+    {
+      "index": 4,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk04_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 6051
+    },
+    {
+      "index": 5,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk05_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 325
+    },
+    {
+      "index": 6,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk06_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 3578
+    },
+    {
+      "index": 7,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk07_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 3257
+    },
+    {
+      "index": 8,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk08_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 3546
+    },
+    {
+      "index": 9,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk09_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 803
+    },
+    {
+      "index": 10,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk10_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 24307
+    },
+    {
+      "index": 11,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk11_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 26673
+    },
+    {
+      "index": 12,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk12_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 7853
+    },
+    {
+      "index": 13,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk13_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 4978
+    },
+    {
+      "index": 14,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk14_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 5228
+    },
+    {
+      "index": 15,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk15_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 2310
+    },
+    {
+      "index": 16,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk16_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 1597
+    },
+    {
+      "index": 17,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk17_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 13178
+    },
+    {
+      "index": 18,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk18_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 15547
+    },
+    {
+      "index": 19,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk19_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 3770
+    },
+    {
+      "index": 20,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk20_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 2218
+    },
+    {
+      "index": 21,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk21_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 5034
+    },
+    {
+      "index": 22,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk22_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 9086
+    },
+    {
+      "index": 23,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk23_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 9153
+    },
+    {
+      "index": 24,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk24_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 4469
+    },
+    {
+      "index": 25,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk25_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 4831
+    },
+    {
+      "index": 26,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk26_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 366
+    },
+    {
+      "index": 27,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk27_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 14118
+    },
+    {
+      "index": 28,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk28_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 13759
+    },
+    {
+      "index": 29,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk29_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 15902
+    },
+    {
+      "index": 30,
+      "file": "Udo-Zolzer-digital-audio-signal-processing.9780470997857.40435_chunk30_p1-331.md",
+      "approx_pages": [
+        1,
+        331
+      ],
+      "word_count": 5525
+    }
+  ]
+}

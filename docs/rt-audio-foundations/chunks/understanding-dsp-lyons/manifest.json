@@ -1,0 +1,253 @@
+{
+  "source_pdf": "..\\sessions\\knowledge\\pdf\\UnderstandingDigitalSignalProcessing.pdf",
+  "title": "Understanding DSP (Lyons)",
+  "extracted_with": "pdfminer.six",
+  "target_words": 2800,
+  "overlap_words": 200,
+  "created_utc": "2025-09-04T06:54:18.365950Z",
+  "chunks": [
+    {
+      "index": 1,
+      "file": "UnderstandingDigitalSignalProcessing_chunk01_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 1799
+    },
+    {
+      "index": 2,
+      "file": "UnderstandingDigitalSignalProcessing_chunk02_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 3985
+    },
+    {
+      "index": 3,
+      "file": "UnderstandingDigitalSignalProcessing_chunk03_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 2751
+    },
+    {
+      "index": 4,
+      "file": "UnderstandingDigitalSignalProcessing_chunk04_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 11584
+    },
+    {
+      "index": 5,
+      "file": "UnderstandingDigitalSignalProcessing_chunk05_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 15966
+    },
+    {
+      "index": 6,
+      "file": "UnderstandingDigitalSignalProcessing_chunk06_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 8009
+    },
+    {
+      "index": 7,
+      "file": "UnderstandingDigitalSignalProcessing_chunk07_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 21368
+    },
+    {
+      "index": 8,
+      "file": "UnderstandingDigitalSignalProcessing_chunk08_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 29403
+    },
+    {
+      "index": 9,
+      "file": "UnderstandingDigitalSignalProcessing_chunk09_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 30735
+    },
+    {
+      "index": 10,
+      "file": "UnderstandingDigitalSignalProcessing_chunk10_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 51079
+    },
+    {
+      "index": 11,
+      "file": "UnderstandingDigitalSignalProcessing_chunk11_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 50365
+    },
+    {
+      "index": 12,
+      "file": "UnderstandingDigitalSignalProcessing_chunk12_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 31601
+    },
+    {
+      "index": 13,
+      "file": "UnderstandingDigitalSignalProcessing_chunk13_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 18517
+    },
+    {
+      "index": 14,
+      "file": "UnderstandingDigitalSignalProcessing_chunk14_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 29974
+    },
+    {
+      "index": 15,
+      "file": "UnderstandingDigitalSignalProcessing_chunk15_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 30454
+    },
+    {
+      "index": 16,
+      "file": "UnderstandingDigitalSignalProcessing_chunk16_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 21855
+    },
+    {
+      "index": 17,
+      "file": "UnderstandingDigitalSignalProcessing_chunk17_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 60935
+    },
+    {
+      "index": 18,
+      "file": "UnderstandingDigitalSignalProcessing_chunk18_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 50191
+    },
+    {
+      "index": 19,
+      "file": "UnderstandingDigitalSignalProcessing_chunk19_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 2931
+    },
+    {
+      "index": 20,
+      "file": "UnderstandingDigitalSignalProcessing_chunk20_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 932
+    },
+    {
+      "index": 21,
+      "file": "UnderstandingDigitalSignalProcessing_chunk21_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 5198
+    },
+    {
+      "index": 22,
+      "file": "UnderstandingDigitalSignalProcessing_chunk22_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 6311
+    },
+    {
+      "index": 23,
+      "file": "UnderstandingDigitalSignalProcessing_chunk23_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 4599
+    },
+    {
+      "index": 24,
+      "file": "UnderstandingDigitalSignalProcessing_chunk24_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 4595
+    },
+    {
+      "index": 25,
+      "file": "UnderstandingDigitalSignalProcessing_chunk25_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 2056
+    },
+    {
+      "index": 26,
+      "file": "UnderstandingDigitalSignalProcessing_chunk26_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 1007
+    },
+    {
+      "index": 27,
+      "file": "UnderstandingDigitalSignalProcessing_chunk27_p1-858.md",
+      "approx_pages": [
+        1,
+        858
+      ],
+      "word_count": 8873
+    }
+  ]
+}

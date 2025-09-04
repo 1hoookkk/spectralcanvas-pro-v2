@@ -28,7 +28,6 @@ public:
                           juce::dsp::WindowingFunction<float>::hann);
         
         anaBuf_.assign((size_t)fftSize_, 0.0f);
-        timeWin_.assign((size_t)fftSize_, 0.0f);  // Pre-allocated temp buffer for windowing
         // JUCE real-only FFT uses interleaved re/imag storage; allocate 2*fft
         spec_.assign((size_t)fftSize_ * 2, 0.0f);
         ola_.assign((size_t)fftSize_ + hop_, 0.0f);
@@ -61,18 +60,20 @@ public:
                     std::memmove(anaBuf_.data(), anaBuf_.data() + hop_, sizeof(float) * (size_t)tail);
                 std::memcpy(anaBuf_.data() + tail, inputFifo_.data(), sizeof(float) * (size_t)hop_);
 
-                // Forward FFT → complex spectrum
-                std::memcpy(timeWin_.data(), anaBuf_.data(), sizeof(float) * (size_t)fftSize_);
-                
-                // RT-SAFE: Apply analysis window from precomputed table
+                // Forward FFT → complex spectrum (FUSED: windowing + FFT input preparation)
                 const int currentSize = currentFftSize_.load(std::memory_order_acquire);
+                std::fill(spec_.begin(), spec_.end(), 0.0f);
+                
+                // RT-SAFE: Fused windowing during FFT input preparation
                 if (currentSize == fftSize_) {
+                    // Apply window coefficients directly to FFT input buffer
                     for (int i = 0; i < fftSize_; ++i)
-                        timeWin_[(size_t)i] *= anaWinTable_[(size_t)i];
+                        spec_[(size_t)i] = anaBuf_[(size_t)i] * anaWinTable_[(size_t)i];
+                } else {
+                    // Fallback: copy without windowing if sizes don't match
+                    std::memcpy(spec_.data(), anaBuf_.data(), sizeof(float) * (size_t)fftSize_);
                 }
                 
-                std::fill(spec_.begin(), spec_.end(), 0.0f);
-                std::memcpy(spec_.data(), timeWin_.data(), sizeof(float) * (size_t)fftSize_);
                 fft_.performRealOnlyForwardTransform(spec_.data());
 
                 // Magnitude + scale bins (preserve phase)
@@ -123,7 +124,7 @@ private:
     std::vector<float> anaWinTable_, synWinTable_;
     std::atomic<int> currentFftSize_{0};  // Atomic size validation for RT safety
     
-    std::vector<float> anaBuf_, timeWin_, spec_, ola_, inputFifo_;
+    std::vector<float> anaBuf_, spec_, ola_, inputFifo_;
     int writePos_{0};
     int fifoPos_{0};
     float invFft_{1.0f};

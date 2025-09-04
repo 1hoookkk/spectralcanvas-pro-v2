@@ -55,23 +55,23 @@ void CanvasComponent::paint(juce::Graphics& g)
     if (debugEnabled)
     {
         // Get immutable snapshot from audio processor (thread-safe)
-        auto snapshot = audioProcessor.getCanvasSnapshot();
-        if (!snapshot)
+        SpectralCanvasProAudioProcessor::CanvasSnapshot snapshot;
+        if (!audioProcessor.getCanvasSnapshot(snapshot))
         {
             DBG("Canvas::paint END #" << paintId << " (no snapshot)");
             return; // No data yet
         }
         
         // Use snapshot data - all immutable and thread-safe
-        const auto& metrics = snapshot->metrics;
-        const auto path = snapshot->currentPath;
-        const bool wrote = snapshot->wroteAudioFlag;
-        const float sr = (float) snapshot->sampleRate;
-        const int bs = snapshot->blockSize;
+        const auto& metrics = snapshot.metrics;
+        const auto path = snapshot.currentPath;
+        const bool wrote = snapshot.wroteAudioFlag;
+        const float sr = (float) snapshot.sampleRate;
+        const int bs = snapshot.blockSize;
         const int queueDrops = queueDropCounter.load(std::memory_order_relaxed);
 #ifdef PHASE4_EXPERIMENT
-        const int activeBins = snapshot->activeBins;
-        const int totalBins = snapshot->totalBins;
+        const int activeBins = snapshot.activeBins;
+        const int totalBins = snapshot.totalBins;
 #else
         const int activeBins = 0;
         const int totalBins = 0;
@@ -91,10 +91,10 @@ void CanvasComponent::paint(juce::Graphics& g)
                     
 #ifdef PHASE4_EXPERIMENT
                     // Add queue diagnostics for Phase4 debugging (from snapshot)
-                    const uint64_t pushes = snapshot->maskPushCount;
-                    const uint64_t drops = snapshot->maskDropCount;
-                    const uint64_t phase4Blocks = snapshot->phase4Blocks;
-                    const float maxMag = snapshot->maxMagnitude;
+                    const uint64_t pushes = snapshot.maskPushCount;
+                    const uint64_t drops = snapshot.maskDropCount;
+                    const uint64_t phase4Blocks = snapshot.phase4Blocks;
+                    const float maxMag = snapshot.maxMagnitude;
                     pathStr += juce::String::formatted("\nQueue: %llu pushes | %llu drops", pushes, drops);
                     pathStr += juce::String::formatted("\nMaxMag: %.4f | Phase4 Blocks: %llu", maxMag, phase4Blocks);
                     

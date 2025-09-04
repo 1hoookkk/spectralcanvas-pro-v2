@@ -1034,41 +1034,40 @@ SpectralCanvasProAudioProcessor::PerformanceMetrics SpectralCanvasProAudioProces
 
 void SpectralCanvasProAudioProcessor::updateReportedLatency(int samples) noexcept
 {
-    juce::ignoreUnused(samples);
-    // Ensure latency matches STFT configuration (FFT_SIZE - HOP_SIZE)
-    const int stftLatency = AtlasConfig::FFT_SIZE - AtlasConfig::HOP_SIZE; // 384 samples
-    AudioProcessor::setLatencySamples(stftLatency);
-    latencySamples_.store(stftLatency, std::memory_order_release);
+    latencySamples_.store(samples, std::memory_order_release);
+    juce::AudioProcessor::setLatencySamples(samples); // <- ensure wrapper sees it
+    DBG("updateReportedLatency(" << samples << ")");
 }
 
-std::shared_ptr<const SpectralCanvasProAudioProcessor::CanvasSnapshot> SpectralCanvasProAudioProcessor::getCanvasSnapshot() const
+
+bool SpectralCanvasProAudioProcessor::getCanvasSnapshot(CanvasSnapshot& out) const
 {
-    return std::atomic_load_explicit(&canvasSnapshot_, std::memory_order_acquire);
+    return snapshotBus_.tryLoad(out);
 }
 
 void SpectralCanvasProAudioProcessor::publishCanvasSnapshot() const
 {
-    auto snapshot = std::make_shared<CanvasSnapshot>();
+    CanvasSnapshot snapshot;
     
     // Populate with current processor state
-    snapshot->timestampMs = juce::Time::getMillisecondCounterHiRes();
-    snapshot->metrics = getPerformanceMetrics();
-    snapshot->currentPath = getCurrentPath();
-    snapshot->wroteAudioFlag = getWroteAudioFlag();
-    snapshot->sampleRate = getSampleRate();
-    snapshot->blockSize = getBlockSize();
+    snapshot.timestampMs = juce::Time::getMillisecondCounterHiRes();
+    snapshot.metrics = getPerformanceMetrics();
+    snapshot.currentPath = getCurrentPath();
+    snapshot.wroteAudioFlag = getWroteAudioFlag();
+    snapshot.sampleRate = getSampleRate();
+    snapshot.blockSize = getBlockSize();
     
     #ifdef PHASE4_EXPERIMENT
-    snapshot->activeBins = getActiveBinCount();
-    snapshot->totalBins = getNumBins();
-    snapshot->maskPushCount = getMaskPushCount();
-    snapshot->maskDropCount = getMaskDropCount();
-    snapshot->maxMagnitude = getMaxMagnitude();
-    snapshot->phase4Blocks = getPhase4Blocks();
+    snapshot.activeBins = getActiveBinCount();
+    snapshot.totalBins = getNumBins();
+    snapshot.maskPushCount = getMaskPushCount();
+    snapshot.maskDropCount = getMaskDropCount();
+    snapshot.maxMagnitude = getMaxMagnitude();
+    snapshot.phase4Blocks = getPhase4Blocks();
     #endif
     
-    // Atomically publish the snapshot
-    std::atomic_store_explicit(&canvasSnapshot_, snapshot, std::memory_order_release);
+    // Publish via double-buffered bus - no shared_ptr, no heap allocation
+    snapshotBus_.publish(snapshot);
 }
 
 bool SpectralCanvasProAudioProcessor::pushPaintEvent(float y, float intensity, uint32_t timestampMs) noexcept

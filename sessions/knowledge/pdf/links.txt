@@ -1,0 +1,10 @@
+Julius O. Smith (Stanford CCRMA)
+
+Introduction to Digital Filters
+
+Spectral Audio Signal Processing
+
+Physical Audio Signal Processing
+➝ All freely available online at CCRMA: https://ccrma.stanford.edu/~jos/
+
+These are extremely rigorous but directly useful for FFT, STFT, filter design, phase vocoders.

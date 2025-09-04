@@ -1,0 +1,223 @@
+{
+  "fft": [
+    {
+      "card": "card-fft-fundamentals.md",
+      "source": "outline-understanding-dsp.md", 
+      "pages": "45-78",
+      "confidence": 0.95,
+      "keywords": ["discrete fourier transform", "frequency domain", "spectral analysis"]
+    },
+    {
+      "card": "card-performance-optimization.md",
+      "source": "outline-audio-plugins-cpp.md",
+      "pages": "203-234", 
+      "confidence": 0.85,
+      "keywords": ["fft optimization", "simd", "real-time performance"]
+    }
+  ],
+  "stft": [
+    {
+      "card": "card-stft-processing.md",
+      "source": "outline-understanding-dsp.md",
+      "pages": "156-203",
+      "confidence": 0.92,
+      "keywords": ["short-time fourier transform", "overlap-add", "spectral processing"]
+    },
+    {
+      "card": "card-phase-vocoder.md", 
+      "source": "ccrma-sasp",
+      "url": "https://ccrma.stanford.edu/~jos/sasp/",
+      "confidence": 0.88,
+      "keywords": ["phase vocoder", "spectral manipulation", "time stretching"]
+    }
+  ],
+  "windowing": [
+    {
+      "card": "card-windowing-functions.md",
+      "source": "outline-understanding-dsp.md",
+      "pages": "89-124",
+      "confidence": 0.90,
+      "keywords": ["window functions", "hann", "blackman", "spectral leakage"]
+    },
+    {
+      "card": "card-stft-processing.md",
+      "source": "outline-zolzer-dsp.md", 
+      "pages": "45-67",
+      "confidence": 0.82,
+      "keywords": ["windowing", "overlap-add", "cola"]
+    }
+  ],
+  "phase-vocoder": [
+    {
+      "card": "card-phase-vocoder.md",
+      "source": "ccrma-sasp", 
+      "url": "https://ccrma.stanford.edu/~jos/sasp/",
+      "confidence": 0.95,
+      "keywords": ["phase vocoder", "spectral masking", "frequency domain effects"]
+    }
+  ],
+  "filters": [
+    {
+      "card": "card-filter-design.md",
+      "source": "outline-va-filters.md",
+      "pages": "12-89",
+      "confidence": 0.93,
+      "keywords": ["iir filters", "fir filters", "virtual analog", "zero delay feedback"]
+    },
+    {
+      "card": "card-filter-design.md",
+      "source": "ccrma-filters",
+      "url": "https://ccrma.stanford.edu/~jos/filters/",
+      "confidence": 0.91,
+      "keywords": ["digital filters", "filter design", "frequency response"]
+    }
+  ],
+  "latency": [
+    {
+      "card": "card-rt-safety-patterns.md",
+      "source": "project-specific",
+      "pages": "N/A",
+      "confidence": 0.88,
+      "keywords": ["real-time latency", "audio processing delay", "plugin latency reporting"]
+    },
+    {
+      "card": "card-stft-processing.md", 
+      "source": "outline-understanding-dsp.md",
+      "pages": "178-189",
+      "confidence": 0.84,
+      "keywords": ["stft latency", "hop size", "processing delay"]
+    }
+  ],
+  "rt-safety": [
+    {
+      "card": "card-rt-safety-patterns.md",
+      "source": "project-specific",
+      "pages": "N/A", 
+      "confidence": 0.92,
+      "keywords": ["real-time audio", "memory allocation", "thread safety", "lock-free"]
+    },
+    {
+      "card": "card-juce-integration.md",
+      "source": "outline-audio-plugins-cpp.md",
+      "pages": "123-145",
+      "confidence": 0.87,
+      "keywords": ["juce audioprocessor", "processBlock", "threading model"]
+    }
+  ],
+  "juce-threading": [
+    {
+      "card": "card-juce-integration.md",
+      "source": "outline-audio-plugins-cpp.md", 
+      "pages": "123-145",
+      "confidence": 0.89,
+      "keywords": ["juce threading", "audioprocessor lifecycle", "parameter management"]
+    }
+  ],
+  "memory-allocation": [
+    {
+      "card": "card-rt-safety-patterns.md",
+      "source": "project-specific",
+      "pages": "N/A",
+      "confidence": 0.85,
+      "keywords": ["memory management", "preallocated buffers", "heap allocation"]
+    },
+    {
+      "card": "card-performance-optimization.md",
+      "source": "outline-audio-plugins-cpp.md",
+      "pages": "245-267",
+      "confidence": 0.81,
+      "keywords": ["buffer management", "memory optimization", "cache efficiency"]
+    }
+  ],
+  "overlap-add": [
+    {
+      "card": "card-stft-processing.md",
+      "source": "outline-understanding-dsp.md",
+      "pages": "189-203",
+      "confidence": 0.94,
+      "keywords": ["overlap-add", "ola reconstruction", "windowing", "cola"]
+    },
+    {
+      "card": "card-phase-vocoder.md",
+      "source": "ccrma-sasp",
+      "url": "https://ccrma.stanford.edu/~jos/sasp/",
+      "confidence": 0.90,
+      "keywords": ["overlap-add synthesis", "spectral reconstruction"]
+    }
+  ],
+  "denormals": [
+    {
+      "card": "card-performance-optimization.md",
+      "source": "outline-audio-plugins-cpp.md", 
+      "pages": "234-245",
+      "confidence": 0.83,
+      "keywords": ["denormal numbers", "cpu performance", "floating point optimization"]
+    }
+  ],
+  "parameter-smoothing": [
+    {
+      "card": "card-juce-integration.md",
+      "source": "outline-audio-plugins-cpp.md",
+      "pages": "167-189",
+      "confidence": 0.86,
+      "keywords": ["parameter smoothing", "zipper noise", "control rate"]
+    }
+  ],
+  "ccrma-filters": [
+    {
+      "card": "card-filter-design.md",
+      "source": "ccrma-digital-filters",
+      "url": "https://ccrma.stanford.edu/~jos/filters/",
+      "confidence": 0.95,
+      "keywords": ["digital filter design", "julius smith", "frequency response", "z-transform"]
+    }
+  ],
+  "ccrma-spectral": [
+    {
+      "card": "card-stft-processing.md",
+      "source": "ccrma-sasp", 
+      "url": "https://ccrma.stanford.edu/~jos/sasp/",
+      "confidence": 0.94,
+      "keywords": ["spectral audio processing", "stft", "dft", "julius smith"]
+    },
+    {
+      "card": "card-phase-vocoder.md",
+      "source": "ccrma-sasp",
+      "url": "https://ccrma.stanford.edu/~jos/sasp/",
+      "confidence": 0.95,
+      "keywords": ["phase vocoder", "spectral effects", "time-frequency analysis"]
+    }
+  ],
+  "ccrma-physical": [
+    {
+      "card": "card-performance-optimization.md",
+      "source": "ccrma-pasp",
+      "url": "https://ccrma.stanford.edu/~jos/pasp/",
+      "confidence": 0.88,
+      "keywords": ["physical modeling", "real-time synthesis", "computational efficiency"]
+    }
+  ],
+  "julius-smith": [
+    {
+      "card": "card-filter-design.md",
+      "source": "ccrma-digital-filters",
+      "url": "https://ccrma.stanford.edu/~jos/filters/",
+      "confidence": 0.95,
+      "keywords": ["authoritative dsp", "stanford ccrma", "rigorous mathematics"]
+    },
+    {
+      "card": "card-stft-processing.md", 
+      "source": "ccrma-sasp",
+      "url": "https://ccrma.stanford.edu/~jos/sasp/",
+      "confidence": 0.94,
+      "keywords": ["spectral processing theory", "mathematical foundations"]
+    },
+    {
+      "card": "card-performance-optimization.md",
+      "source": "ccrma-pasp", 
+      "url": "https://ccrma.stanford.edu/~jos/pasp/",
+      "confidence": 0.88,
+      "keywords": ["physical modeling", "synthesis algorithms"]
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "source": "Julius O. Smith CCRMA Online Books",
+  "created_utc": "2025-09-04T06:52:44.187905Z",
+  "extraction_method": "reference_cards",
+  "note": "CCRMA resources are authoritative - use as primary mathematical reference",
+  "resources": [
+    {
+      "title": "Introduction to Digital Filters",
+      "file": "ccrma-introduction-to-digital-filters.md",
+      "url": "https://ccrma.stanford.edu/~jos/filters/",
+      "topics": [
+        "digital filter design",
+        "frequency response",
+        "z-transform",
+        "filter implementation"
+      ],
+      "relevance": "High - fundamental for any filter design in SpectralCanvasPro"
+    },
+    {
+      "title": "Spectral Audio Signal Processing",
+      "file": "ccrma-spectral-audio-signal-processing.md",
+      "url": "https://ccrma.stanford.edu/~jos/sasp/",
+      "topics": [
+        "STFT",
+        "phase vocoder",
+        "spectral effects",
+        "windowing",
+        "overlap-add"
+      ],
+      "relevance": "Critical - core theory for STFT masking pipeline"
+    },
+    {
+      "title": "Physical Audio Signal Processing",
+      "file": "ccrma-physical-audio-signal-processing.md",
+      "url": "https://ccrma.stanford.edu/~jos/pasp/",
+      "topics": [
+        "real-time synthesis",
+        "computational efficiency",
+        "delay lines",
+        "digital waveguides"
+      ],
+      "relevance": "Medium - useful for performance optimization patterns"
+    }
+  ]
+}

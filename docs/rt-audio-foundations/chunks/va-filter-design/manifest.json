@@ -1,0 +1,28 @@
+{
+  "source_pdf": "..\\sessions\\knowledge\\pdf\\VAFilterDesign_2.1.0.pdf",
+  "title": "VA Filter Design",
+  "extracted_with": "pdfminer.six",
+  "target_words": 2800,
+  "overlap_words": 200,
+  "created_utc": "2025-09-04T06:53:07.822875Z",
+  "chunks": [
+    {
+      "index": 1,
+      "file": "VAFilterDesign_2.1.0_chunk01_p1-1.md",
+      "approx_pages": [
+        1,
+        1
+      ],
+      "word_count": 3
+    },
+    {
+      "index": 2,
+      "file": "VAFilterDesign_2.1.0_chunk02_p1-520.md",
+      "approx_pages": [
+        1,
+        520
+      ],
+      "word_count": 201699
+    }
+  ]
+}

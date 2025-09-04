@@ -100,10 +100,21 @@ add_executable(GPUResilienceTest
     TestHarness.cpp
 )
 
+# Test executable: Windowing FFT Benchmark
+add_executable(BenchWindowFFT
+    BenchWindowFft.cpp
+)
+
 target_compile_features(GPUResilienceTest PRIVATE cxx_std_20)
+target_compile_features(BenchWindowFFT PRIVATE cxx_std_20)
 
 target_link_libraries(GPUResilienceTest PRIVATE
     juce::juce_audio_utils
+    juce::juce_dsp
+)
+
+target_link_libraries(BenchWindowFFT PRIVATE
+    juce::juce_core
     juce::juce_dsp
 )
 
@@ -124,6 +135,7 @@ target_include_directories(ProcessBlockTest PRIVATE "../Source")
 target_include_directories(QueueTest PRIVATE "../Source")
 target_include_directories(PerfHarness PRIVATE "../Source")
 target_include_directories(GPUResilienceTest PRIVATE "../Source")
+target_include_directories(BenchWindowFFT PRIVATE "../Source")
 
 # Compiler flags for testing
 if(MSVC)
