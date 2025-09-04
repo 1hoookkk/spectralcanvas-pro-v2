@@ -516,12 +516,6 @@ void SpectrogramComponent::flushCoalescedDeltas_()
     
     (void)maskDeltaQueue_->push(d); // drop when full (bounded)
 
-    // Mirror paint into atlas for immediate visual feedback (UI thread)
-    if (tiledAtlas_ && currentPage_.isValid()) {
-        AtlasPosition pos = d.position;
-        pos.binStart = 0;
-        tiledAtlas_->writeColumn(currentPage_, pos, d.values, AtlasConfig::NUM_BINS);
-    }
     coalesced_.active = false;
 
     // Update last-paint overlay (short-lived)

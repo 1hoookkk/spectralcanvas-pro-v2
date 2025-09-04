@@ -4,6 +4,7 @@
 #include <cmath>
 #include <atomic>
 #include "../Core/AtlasIds.h"
+#include "../Compat/WindowingCompat.h"
 
 /// Forward STFT (real FFT) + magnitude-scaling + inverse + OLA.
 /// Preserves phase by scaling complex bins by (maskedMag / mag).
@@ -21,12 +22,10 @@ public:
         // while audio thread is using it
         anaWinTable_.assign((size_t)fftSize_, 0.0f);
         synWinTable_.assign((size_t)fftSize_, 0.0f);
-        juce::dsp::WindowingFunction<float>::fillWindowingTables(
-            anaWinTable_.data(), (size_t)fftSize_, 
-            juce::dsp::WindowingFunction<float>::hann, false);
-        juce::dsp::WindowingFunction<float>::fillWindowingTables(
-            synWinTable_.data(), (size_t)fftSize_, 
-            juce::dsp::WindowingFunction<float>::hann, false);
+        compat::fillWindow(anaWinTable_.data(), fftSize_, 
+                          juce::dsp::WindowingFunction<float>::hann);
+        compat::fillWindow(synWinTable_.data(), fftSize_, 
+                          juce::dsp::WindowingFunction<float>::hann);
         
         anaBuf_.assign((size_t)fftSize_, 0.0f);
         timeWin_.assign((size_t)fftSize_, 0.0f);  // Pre-allocated temp buffer for windowing
@@ -36,6 +35,7 @@ public:
         writePos_ = 0;
         inputFifo_.assign((size_t)hop_, 0.0f);
         fifoPos_ = 0;
+        invFft_ = 1.0f / (float)fftSize_;
         
         // Atomically mark ready for RT use
         currentFftSize_.store(fftSize_, std::memory_order_release);
@@ -85,13 +85,13 @@ public:
                     im *= m;
                 }
 
-                // Inverse + synthesis window
+                // Inverse + synthesis window (with normalization)
                 fft_.performRealOnlyInverseTransform(spec_.data());
                 
                 // RT-SAFE: Apply synthesis window from precomputed table
                 if (currentSize == fftSize_) {
                     for (int i = 0; i < fftSize_; ++i)
-                        spec_[(size_t)i] *= synWinTable_[(size_t)i];
+                        spec_[(size_t)i] *= (synWinTable_[(size_t)i] * invFft_);
                 }
 
                 // Overlap-add into circular buffer and output hop samples
@@ -126,4 +126,5 @@ private:
     std::vector<float> anaBuf_, timeWin_, spec_, ola_, inputFifo_;
     int writePos_{0};
     int fifoPos_{0};
+    float invFft_{1.0f};
 };
