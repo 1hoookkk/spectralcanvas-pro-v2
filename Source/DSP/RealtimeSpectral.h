@@ -2,10 +2,12 @@
 #include <juce_dsp/juce_dsp.h>
 #include <vector>
 #include <cmath>
+#include <atomic>
 #include "../Core/AtlasIds.h"
 
 /// Forward STFT (real FFT) + magnitude-scaling + inverse + OLA.
 /// Preserves phase by scaling complex bins by (maskedMag / mag).
+/// RT-SAFE: Uses precomputed window tables to avoid placement-new race conditions.
 class RealtimeSpectral
 {
 public:
@@ -13,15 +15,30 @@ public:
     {
         sr_ = sampleRate; fftSize_ = fftSize; hop_ = hop; bins_ = fftSize / 2;
         fft_ = juce::dsp::FFT((int)std::log2((double)fftSize_));
-        anaWin_ = juce::dsp::WindowingFunction<float>((size_t)fftSize_, juce::dsp::WindowingFunction<float>::hann, false);
-        synWin_ = juce::dsp::WindowingFunction<float>((size_t)fftSize_, juce::dsp::WindowingFunction<float>::hann, false);
+        
+        // RT-SAFE: Precompute window tables instead of placement-new (fixes editor crash)
+        // This avoids race condition where GUI thread destructs WindowingFunction 
+        // while audio thread is using it
+        anaWinTable_.assign((size_t)fftSize_, 0.0f);
+        synWinTable_.assign((size_t)fftSize_, 0.0f);
+        juce::dsp::WindowingFunction<float>::fillWindowingTable(
+            anaWinTable_.data(), (size_t)fftSize_, 
+            juce::dsp::WindowingFunction<float>::hann, false);
+        juce::dsp::WindowingFunction<float>::fillWindowingTable(
+            synWinTable_.data(), (size_t)fftSize_, 
+            juce::dsp::WindowingFunction<float>::hann, false);
+        
         anaBuf_.assign((size_t)fftSize_, 0.0f);
         timeWin_.assign((size_t)fftSize_, 0.0f);  // Pre-allocated temp buffer for windowing
-        spec_.assign((size_t)fftSize_, 0.0f);  // interleaved re/imag
+        // JUCE real-only FFT uses interleaved re/imag storage; allocate 2*fft
+        spec_.assign((size_t)fftSize_ * 2, 0.0f);
         ola_.assign((size_t)fftSize_ + hop_, 0.0f);
         writePos_ = 0;
         inputFifo_.assign((size_t)hop_, 0.0f);
         fifoPos_ = 0;
+        
+        // Atomically mark ready for RT use
+        currentFftSize_.store(fftSize_, std::memory_order_release);
     }
 
     /// Push a block of input and render masked output (mono).
@@ -46,7 +63,14 @@ public:
 
                 // Forward FFT → complex spectrum
                 std::memcpy(timeWin_.data(), anaBuf_.data(), sizeof(float) * (size_t)fftSize_);
-                anaWin_.multiplyWithWindowingTable(timeWin_.data(), (size_t)fftSize_);
+                
+                // RT-SAFE: Apply analysis window from precomputed table
+                const int currentSize = currentFftSize_.load(std::memory_order_acquire);
+                if (currentSize == fftSize_) {
+                    for (int i = 0; i < fftSize_; ++i)
+                        timeWin_[(size_t)i] *= anaWinTable_[(size_t)i];
+                }
+                
                 std::fill(spec_.begin(), spec_.end(), 0.0f);
                 std::memcpy(spec_.data(), timeWin_.data(), sizeof(float) * (size_t)fftSize_);
                 fft_.performRealOnlyForwardTransform(spec_.data());
@@ -63,7 +87,12 @@ public:
 
                 // Inverse + synthesis window
                 fft_.performRealOnlyInverseTransform(spec_.data());
-                synWin_.multiplyWithWindowingTable(spec_.data(), (size_t)fftSize_);
+                
+                // RT-SAFE: Apply synthesis window from precomputed table
+                if (currentSize == fftSize_) {
+                    for (int i = 0; i < fftSize_; ++i)
+                        spec_[(size_t)i] *= synWinTable_[(size_t)i];
+                }
 
                 // Overlap-add into circular buffer and output hop samples
                 for (int i = 0; i < hop_; ++i)
@@ -89,9 +118,11 @@ private:
     double sr_{48000.0};
     int fftSize_{2048}, hop_{256}, bins_{1024};
     juce::dsp::FFT fft_{11};
-    juce::dsp::WindowingFunction<float> anaWin_{ (size_t)2048, juce::dsp::WindowingFunction<float>::hann, false };
-    juce::dsp::WindowingFunction<float> synWin_{ (size_t)2048, juce::dsp::WindowingFunction<float>::hann, false };
-
+    
+    // RT-SAFE: Precomputed window tables (eliminates placement-new race condition)
+    std::vector<float> anaWinTable_, synWinTable_;
+    std::atomic<int> currentFftSize_{0};  // Atomic size validation for RT safety
+    
     std::vector<float> anaBuf_, timeWin_, spec_, ola_, inputFifo_;
     int writePos_{0};
     int fifoPos_{0};

@@ -193,8 +193,8 @@ void SpectralCanvasProAudioProcessor::releaseResources()
     // Shutdown tiled atlas system
     shutdownTiledAtlas();
     
-    // Reset latency to 0 on teardown for host expectations
-    setLatencySamples(0);
+    // Keep latency intact - host needs consistent latency reporting
+    // Do not reset latency to 0 here (causes pluginval failures)
 }
 
 // Called from parameter listener / message thread whenever GUI toggles mode
