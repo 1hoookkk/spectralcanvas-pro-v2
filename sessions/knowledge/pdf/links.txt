@@ -6,5 +6,6 @@ Spectral Audio Signal Processing
 
 Physical Audio Signal Processing
 ➝ All freely available online at CCRMA: https://ccrma.stanford.edu/~jos/
+CCRMA Online Books Index: https://ccrma.stanford.edu/~jos/EE201/Related_Online_Books_CCRMA.html
 
 These are extremely rigorous but directly useful for FFT, STFT, filter design, phase vocoders.

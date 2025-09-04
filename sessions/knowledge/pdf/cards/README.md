@@ -14,4 +14,8 @@ Export to PDF: open each `.md` in your editor and "Print to PDF" (or use `pandoc
 - 08 — Audio Thread Do's & Don'ts (`08-Audio-Thread-Dos-and-Donts.md`)
 - 09 — Messaging & Concurrency (`09-Messaging-and-Concurrency.md`)
 - 10 — GPU/Viz & Shaders (`10-GPU-Viz-and-Shaders.md`)
+- 11 — CCRMA Online Books Index (`11-CCRMA-Online-Books-Index.md`)
+- 12 — Phase Vocoder: Accuracy & Phase Handling (`12-Phase-Vocoder-Accuracy-and-Phase-Handling.md`)
+- 13 — FFT Performance & Planning (`13-FFT-Performance-and-Planning.md`)
+- 14 — Resampling & Interpolation (`14-Resampling-and-Interpolation.md`)
 

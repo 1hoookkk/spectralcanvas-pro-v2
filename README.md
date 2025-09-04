@@ -2,18 +2,19 @@
 
 A revolutionary spectral manipulation synthesizer that transforms visual painting gestures into musical expression. Paint sound directly on a living spectrogram canvas where "What You See Is What You Hear" (WYSIWYH).
 
-## Current Status: Phase 2/3 Complete ✅
+## Current Status: Phases 1–4 Complete • Phase 5 In Progress ✅
 
 **Latest Build**: VST3 + Standalone passing **pluginval strictness 6**
 **Stability**: All heap corruption fixes validated and stable
-**New Features**: Progressive spectrogram display + painting scaffolds ready
+**New Features**: Progressive spectrogram, painting scaffolds, RT mask delta drain/apply
 
 ### Implementation Progress
 
 - ✅ **Phase 1**: Core tiled atlas + message bus + cursor scaffold
 - ✅ **Phase 2**: Progressive spectrogram rendering (CPU fallback + GPU atlas)
 - ✅ **Phase 3**: Painting tools + mask delta queue system
-- 🔄 **Phase 4**: Audio thread mask application (next milestone)
+- ✅ **Phase 4**: Audio thread mask application (bounded drain + atlas flip)
+- 🔄 **Phase 5**: Musical UX & Keyfilter (piano strip, pitch grid, harmonic brush)
 
 ### Key Features (Implemented)
 

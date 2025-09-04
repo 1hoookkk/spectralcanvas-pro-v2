@@ -45,6 +45,11 @@ MinimalTopStrip::MinimalTopStrip(juce::AudioProcessorValueTreeState& apvts)
     debugToggleButton.setColour(juce::ToggleButton::textColourId, juce::Colours::white);
     setupControl(debugToggleButton, debugLabel, "Debug Overlay");
 
+    // Loop Sample Toggle
+    loopSampleToggle.setButtonText("Loop");
+    loopSampleToggle.setColour(juce::ToggleButton::textColourId, juce::Colours::white);
+    setupControl(loopSampleToggle, loopLabel, "Playback");
+
     // Parameter attachments
     modeAttachment = std::make_unique<juce::ComboBoxParameterAttachment>(
         *apvts.getParameter(Params::ParameterIDs::mode), modeCombo);
@@ -63,6 +68,9 @@ MinimalTopStrip::MinimalTopStrip(juce::AudioProcessorValueTreeState& apvts)
         
     debugToggleAttachment = std::make_unique<juce::ButtonParameterAttachment>(
         *apvts.getParameter(Params::ParameterIDs::debugOverlayEnabled), debugToggleButton);
+
+    loopToggleAttachment = std::make_unique<juce::ButtonParameterAttachment>(
+        *apvts.getParameter(Params::ParameterIDs::loopSample), loopSampleToggle);
 }
 
 void MinimalTopStrip::paint(juce::Graphics& g)
@@ -78,16 +86,17 @@ void MinimalTopStrip::paint(juce::Graphics& g)
 void MinimalTopStrip::resized()
 {
     auto bounds = getLocalBounds().reduced(8, 4);
-    // 6 groups: Mode | Blend | Test | MaskDepth | BrushStrength | Debug
-    int controlWidth = bounds.getWidth() / 6;
+    // 7 groups: Mode | Blend | Test | MaskDepth | BrushStrength | Debug | Loop
+    int controlWidth = bounds.getWidth() / 7;
 
-    // Layout controls horizontally: Mode | Blend | Test | MaskDepth | BrushStrength | Debug
+    // Layout controls horizontally
     auto modeArea = bounds.removeFromLeft(controlWidth);
     auto blendArea = bounds.removeFromLeft(controlWidth);
     auto testArea = bounds.removeFromLeft(controlWidth);
     auto maskArea = bounds.removeFromLeft(controlWidth);
     auto strengthArea = bounds.removeFromLeft(controlWidth);
-    auto debugArea = bounds; // last slot uses remainder
+    auto debugArea = bounds.removeFromLeft(controlWidth);
+    auto loopArea = bounds; // last slot uses remainder
 
     // Each area: label on top, control below
     modeLabel.setBounds(modeArea.removeFromTop(16));
@@ -107,6 +116,9 @@ void MinimalTopStrip::resized()
     
     debugLabel.setBounds(debugArea.removeFromTop(16));
     debugToggleButton.setBounds(debugArea.reduced(4));
+
+    loopLabel.setBounds(loopArea.removeFromTop(16));
+    loopSampleToggle.setBounds(loopArea.reduced(4));
 }
 
 void MinimalTopStrip::setupControl(juce::Component& control, juce::Label& label, const juce::String& text)

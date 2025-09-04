@@ -102,10 +102,10 @@ void SpectralCanvasProEditor::resized()
 {
     auto bounds = getLocalBounds();
     
-    // Top strip gets fixed height (40px minimal)
-    auto topArea = bounds.removeFromTop(40);
+    // Top strip gets fixed height (bumped for readability)
+    auto topArea = bounds.removeFromTop(56);
     topStrip->setBounds(topArea.removeFromLeft(topArea.getWidth() / 2));
-    loadButton.setBounds(topArea.removeFromLeft(140).reduced(2));
+    loadButton.setBounds(topArea.removeFromLeft(180).reduced(4));
     
     // Split remaining area between canvas and spectrogram
     auto leftArea = bounds.removeFromLeft(bounds.getWidth() / 2);
