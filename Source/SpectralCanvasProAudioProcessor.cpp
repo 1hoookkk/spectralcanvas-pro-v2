@@ -35,7 +35,7 @@ SpectralCanvasProAudioProcessor::~SpectralCanvasProAudioProcessor()
 
 void SpectralCanvasProAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
-    DBG("prepareToPlay(sr=" << sampleRate << ", spb=" << samplesPerBlock << ")");
+    DBG("[reactivate] prepareToPlay sr=" << sampleRate << " spb=" << samplesPerBlock);
     currentSampleRate = sampleRate;
     currentBlockSize = samplesPerBlock;
     
@@ -178,7 +178,7 @@ void SpectralCanvasProAudioProcessor::prepareToPlay(double sampleRate, int sampl
 
 void SpectralCanvasProAudioProcessor::releaseResources()
 {
-    DBG("releaseResources()");
+    DBG("[reactivate] releaseResources - keeping latency at " << getLatencySamples());
     if (spectralEngine)
         spectralEngine->reset();
         
@@ -193,6 +193,29 @@ void SpectralCanvasProAudioProcessor::releaseResources()
     
     // Keep latency intact - host needs consistent latency reporting
     // Do not reset latency to 0 here (causes pluginval failures)
+}
+
+void SpectralCanvasProAudioProcessor::suspendProcessing(bool shouldBeSuspended)
+{
+    DBG("[reactivate] suspendProcessing=" << (shouldBeSuspended ? "true" : "false"));
+    
+    if (shouldBeSuspended) {
+        // Stop hop scheduler cleanly
+        hop_.reset();
+        
+        // Reset SPSC queues to prevent stale data on reactivation
+        maskDeltaQueue.clear();
+        atlasUpdateQueue.clear();
+        maskColumnQueue.clear();
+        sampleQueue.clear();
+    } else {
+        // Verify latency maintained after unsuspend
+        const int currentLatency = getLatencySamples();
+        const int expectedLatency = AtlasConfig::FFT_SIZE - AtlasConfig::HOP_SIZE; // 384
+        if (currentLatency != expectedLatency) {
+            DBG("[reactivate] WARNING: latency drift after unsuspend: " << currentLatency << " != " << expectedLatency);
+        }
+    }
 }
 
 // Called from parameter listener / message thread whenever GUI toggles mode

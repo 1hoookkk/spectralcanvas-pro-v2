@@ -49,6 +49,7 @@ public:
     // AudioProcessor interface
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
+    void suspendProcessing(bool shouldBeSuspended) override;
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) noexcept override;
     
     juce::AudioProcessorEditor* createEditor() override;
@@ -60,8 +61,8 @@ public:
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
     
-    // Override latency reporting with atomic backing for thread safety
-    int getLatencySamples() const noexcept { return latencySamples_.load(std::memory_order_acquire); }
+    // CANNOT OVERRIDE: getLatencySamples() is not virtual in JUCE AudioProcessor
+    // Must rely solely on base class setLatencySamples() calls
     void updateReportedLatency(int samples) noexcept;
     
     int getNumPrograms() override { return 1; }
@@ -227,6 +228,9 @@ private:
     void generateFallbackBeep(juce::AudioBuffer<float>& buffer, int numSamples) noexcept;
     void fallbackBeep(juce::AudioBuffer<float>& buffer) noexcept;
 
+    // Apply fixed output latency for non-STFT paths to match reported latency
+    void applyLatencyDelayIfNeeded(juce::AudioBuffer<float>& buffer) noexcept;
+
 #ifdef PHASE4_EXPERIMENT
     // RT-safe state resets for path transitions
     void rtResetPhase4_() noexcept;
@@ -358,6 +362,10 @@ private:
 
     // Hybrid mode scratch buffer (preallocated in prepareToPlay)
     juce::AudioBuffer<float> hybridBuffer_;
+
+    // Output latency alignment for non-STFT paths
+    juce::AudioBuffer<float> latencyLine_;
+    int latencyWritePos_ = 0;
     
     // Helper to fetch APVTS values safely (call on audio thread)
     inline float getParamFast(const juce::String& paramId) const noexcept
@@ -394,7 +402,7 @@ private:
     std::atomic<uint32_t> currentColumnIndex_{0};
     
     // Thread-safe latency and GUI snapshot storage
-    mutable std::atomic<int> latencySamples_{384}; // Default: FFT_SIZE - HOP_SIZE
+    mutable std::atomic<int> latencySamples_{AtlasConfig::FFT_SIZE - AtlasConfig::HOP_SIZE}; // Default: FFT_SIZE - HOP_SIZE
     mutable std::atomic<std::shared_ptr<const CanvasSnapshot>> canvasSnapshot_{nullptr};
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectralCanvasProAudioProcessor)
