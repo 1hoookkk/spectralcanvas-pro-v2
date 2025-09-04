@@ -1,77 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git checkout:*)",
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
-      "Bash(git reset:*)",
-      "Bash(powershell:*)",
-      "Bash(for path in \"C:\\ARTEFACT_Production\\Source\\Core\\MessageBus.h\" \"C:\\ARTEFACT_Production\\Source\\DSP\\SpectralEngine.cpp\" \"C:\\ARTEFACT_Production\\Source\\DSP\\SpectralEngineStub.cpp\")",
-      "Bash(do if [ -f \"$path\" ])",
-      "Bash(then echo \"EXISTS: $path\")",
-      "Bash(else echo \"MISSING: $path\")",
-      "Bash(fi)",
-      "Bash(done)",
-      "Bash(cmake:*)"
+      "Task",
+      "Task"
     ],
     "deny": [],
     "ask": [],
-    "additionalDirectories": [
-      "C:\\temp\\test_app"
-    ]
+    "additionalDirectories": []
   },
-  "hooks": {
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "curl -s -X POST \"http://localhost:${MCP_VOICE_HOOKS_PORT:-5111}/api/hooks/stop\" || echo '{\"decision\": \"approve\", \"reason\": \"voice-hooks unavailable\"}'"
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "^(?!mcp__voice-hooks__).*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "curl -s -X POST \"http://localhost:${MCP_VOICE_HOOKS_PORT:-5111}/api/hooks/pre-tool\" || echo '{\"decision\": \"approve\", \"reason\": \"voice-hooks unavailable\"}'"
-          }
-        ]
-      },
-      {
-        "matcher": "^mcp__voice-hooks__speak$",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "curl -s -X POST \"http://localhost:${MCP_VOICE_HOOKS_PORT:-5111}/api/hooks/pre-speak\" || echo '{\"decision\": \"approve\", \"reason\": \"voice-hooks unavailable\"}'"
-          }
-        ]
-      },
-      {
-        "matcher": "^mcp__voice-hooks__wait_for_utterance$",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "curl -s -X POST \"http://localhost:${MCP_VOICE_HOOKS_PORT:-5111}/api/hooks/pre-wait\" || echo '{\"decision\": \"approve\", \"reason\": \"voice-hooks unavailable\"}'"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "^(?!mcp__voice-hooks__|ExitPlanMode).*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "curl -s -X POST \"http://localhost:${MCP_VOICE_HOOKS_PORT:-5111}/api/hooks/post-tool\" || echo '{}'"
-          }
-        ]
-      }
-    ]
-  },
-  "disableAllHooks": false
+  "hooks": {}
 }

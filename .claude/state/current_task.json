@@ -1,6 +1,6 @@
 {
-  "task": "h-implement-todos",
-  "branch": "master",
-  "services": ["Core", "DSP", "Audio"],
-  "updated": "2025-09-03"
+  "task": null,
+  "branch": null,
+  "services": [],
+  "updated": "2025-09-04"
 }

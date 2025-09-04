@@ -215,23 +215,13 @@ endif()
 # Post-build: stage HLSL shader assets next to binaries
 if (SCP_INSTALL_SHADERS)
   add_custom_command(TARGET SpectralCanvasPro POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E echo "Staging shaders to $<TARGET_FILE_DIR:SpectralCanvasPro>/shaders"
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:SpectralCanvasPro>/shaders"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_CURRENT_SOURCE_DIR}/Source/Viz/shaders"
             "$<TARGET_FILE_DIR:SpectralCanvasPro>/shaders"
+    COMMENT "Copying HLSL shaders to output directory"
+    VERBATIM
   )
-endif()
-# Optional: install/copy HLSL shaders next to built binaries
-option(SCP_INSTALL_SHADERS "Copy HLSL shaders alongside binaries" ON)
-if(SCP_INSTALL_SHADERS)
-    add_custom_command(TARGET SpectralCanvasPro POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:SpectralCanvasPro>/shaders"
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${CMAKE_CURRENT_SOURCE_DIR}/Source/Viz/shaders"
-                "$<TARGET_FILE_DIR:SpectralCanvasPro>/shaders"
-        COMMENT "Copying HLSL shaders to output directory"
-        VERBATIM)
 endif()
 
 if (MSVC)
