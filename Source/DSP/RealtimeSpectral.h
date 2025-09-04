@@ -21,10 +21,10 @@ public:
         // while audio thread is using it
         anaWinTable_.assign((size_t)fftSize_, 0.0f);
         synWinTable_.assign((size_t)fftSize_, 0.0f);
-        juce::dsp::WindowingFunction<float>::fillWindowingTable(
+        juce::dsp::WindowingFunction<float>::fillWindowingTables(
             anaWinTable_.data(), (size_t)fftSize_, 
             juce::dsp::WindowingFunction<float>::hann, false);
-        juce::dsp::WindowingFunction<float>::fillWindowingTable(
+        juce::dsp::WindowingFunction<float>::fillWindowingTables(
             synWinTable_.data(), (size_t)fftSize_, 
             juce::dsp::WindowingFunction<float>::hann, false);
         

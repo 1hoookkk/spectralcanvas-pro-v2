@@ -609,7 +609,7 @@ void SpectralCanvasProAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     // Phase 4: Apply pending mask deltas (bounded) and advance hop
     hop_.drainAndApply(16);
     hop_.advance((uint32_t) numSamples);
-    deltaDrainsPerBlock_.store(hop_.drainsPerBlock(), std::memory_order_relaxed);
+    // deltaDrains available via getDeltaDrainsPerBlock() method
 
     // Process tiled atlas messages (RT-safe)
     processTiledAtlasMessages();
@@ -1196,7 +1196,7 @@ void SpectralCanvasProAudioProcessor::convertMaskColumnsToDeltas(uint64_t curren
             
             // Debug-only finite value check to catch NaN/infinity corruption
             #if JUCE_DEBUG
-            jassertquiet(juce::isFinite(scaledValue));
+            jassertquiet(std::isfinite(scaledValue));
             #endif
         }
         
