@@ -1,3 +1,18 @@
 {
-  "docs": []
+  "docs": [
+    {"title": "01 — Build & Presets", "path": "sessions/knowledge/pdf/cards/01-Build-and-Presets.md", "type": "card"},
+    {"title": "02 — Tests & Validation", "path": "sessions/knowledge/pdf/cards/02-Tests-and-Validation.md", "type": "card"},
+    {"title": "03 — RT Safety Essentials", "path": "sessions/knowledge/pdf/cards/03-RT-Safety-Essentials.md", "type": "card"},
+    {"title": "04 — Project Structure Map", "path": "sessions/knowledge/pdf/cards/04-Project-Structure-Map.md", "type": "card"},
+    {"title": "05 — Coding Style & Naming", "path": "sessions/knowledge/pdf/cards/05-Coding-Style-and-Naming.md", "type": "card"},
+    {"title": "06 — CMake Options Cheatsheet", "path": "sessions/knowledge/pdf/cards/06-CMake-Options-Cheatsheet.md", "type": "card"},
+    {"title": "07 — Commit & PR Checklist", "path": "sessions/knowledge/pdf/cards/07-Commit-and-PR-Checklist.md", "type": "card"},
+    {"title": "08 — Audio Thread Do's & Don'ts", "path": "sessions/knowledge/pdf/cards/08-Audio-Thread-Dos-and-Donts.md", "type": "card"},
+    {"title": "09 — Messaging & Concurrency", "path": "sessions/knowledge/pdf/cards/09-Messaging-and-Concurrency.md", "type": "card"},
+    {"title": "10 — GPU/Viz & Shaders", "path": "sessions/knowledge/pdf/cards/10-GPU-Viz-and-Shaders.md", "type": "card"},
+    {"title": "11 — CCRMA Online Books Index", "path": "sessions/knowledge/pdf/cards/11-CCRMA-Online-Books-Index.md", "type": "card"},
+    {"title": "12 — Phase Vocoder: Accuracy & Phase Handling", "path": "sessions/knowledge/pdf/cards/12-Phase-Vocoder-Accuracy-and-Phase-Handling.md", "type": "card"},
+    {"title": "13 — FFT Performance & Planning", "path": "sessions/knowledge/pdf/cards/13-FFT-Performance-and-Planning.md", "type": "card"},
+    {"title": "14 — Resampling & Interpolation", "path": "sessions/knowledge/pdf/cards/14-Resampling-and-Interpolation.md", "type": "card"}
+  ]
 }
