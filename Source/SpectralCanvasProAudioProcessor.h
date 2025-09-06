@@ -16,11 +16,17 @@
 #include "DSP/SpectralEngine.h"
 #include "DSP/SampleLoader.h"
 #include "DSP/MaskTestFeeder.h"
+#include "Core/AudioPathId.h"
 #include "SpectralPaintProcessor.h"
 #include "DSP/OfflineStftAnalyzer.h"
 #include "DSP/HopScheduler.h"
 #include "DSP/RealtimeSpectral.h"
+#include "DSP/HopFifo.h"
 #include "Core/TiledAtlas.h"
+#include "Core/MaskColumn.h"
+#include "Core/MaskColumnDelta.h"
+#include "Core/RealtimeMemorySystem.h"
+#include "Core/UndoManager.h"
 
 #ifdef PHASE4_EXPERIMENT
 #include "DSP/KeyFilter.h"
@@ -61,9 +67,22 @@ public:
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
     
-    // Custom latency reporting - uses JUCE base class getLatencySamples()
+    // Custom latency reporting - atomic pattern with JUCE base class
     void updateReportedLatency(int samples) noexcept;
+    int getAtomicLatencySamples() const noexcept;
+
+    // --- Control helpers (callable from editor/loader) ---
+    /** Explicitly enable/disable the diagnostic TestFeeder. */
+    void setUseTestFeeder(bool shouldUse) noexcept;
+
+    /** Notify processor that a real sample was loaded; resets playhead and length. */
+    void onSampleLoaded(std::shared_ptr<juce::AudioBuffer<float>> newBuffer, double sourceSR) noexcept;
+
+private:
+    /** Helper: safe sample rendering (adds to buffer), no modulo unless looping */
+    void addSampleBlock(juce::AudioBuffer<float>& out) noexcept;
     
+public:
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
     void setCurrentProgram(int index) override { juce::ignoreUnused(index); }
@@ -87,6 +106,11 @@ public:
     // Test feedback system (UI thread access)
     void generateImmediateAudioFeedback();
     
+    // Undo functionality
+    void saveUndoState();
+    bool canUndo() const;
+    void performUndo();
+
     // Phase 2-3 debug info getters
     int getBlockSize() const;
     double getSampleRate() const;
@@ -258,9 +282,6 @@ private:
     void generateFallbackBeep(juce::AudioBuffer<float>& buffer, int numSamples) noexcept;
     void fallbackBeep(juce::AudioBuffer<float>& buffer) noexcept;
 
-    // Apply fixed output latency for non-STFT paths to match reported latency
-    void applyLatencyDelayIfNeeded(juce::AudioBuffer<float>& buffer) noexcept;
-
 #ifdef PHASE4_EXPERIMENT
     // RT-safe state resets for path transitions
     void rtResetPhase4_() noexcept;
@@ -326,6 +347,11 @@ private:
     std::atomic<float> brushSize_{8.0f};      // Brush size target
     std::atomic<float> brushStrength_{0.8f};  // Brush strength target
     std::atomic<int> scaleType_{1};  // 0=Chromatic, 1=Major, 2=Minor
+    
+    // Diagnostic telemetry atomics
+    std::atomic<uint8_t> currentAudioPath_{0};  // AudioPathId enum
+    std::atomic<uint32_t> pushesObserved_{0};   // UI thread mask pushes
+    std::atomic<uint32_t> popsObserved_{0};     // Audio thread mask pops
     std::atomic<int> rootNote_{0};   // 0-11
     std::atomic<bool> useModernPaint_{false};
     
@@ -376,6 +402,9 @@ private:
     SpectralPlayer spectralPlayer;
     bool           spectralReady { false };
     
+    // Undo Manager
+    UndoManager undoManager;
+
     // Renderer activation state for HUD
     std::atomic<bool> hasActiveRenderer_{ false };
     
@@ -389,14 +418,26 @@ private:
     std::atomic<uint64_t> totalBlocksProcessed_{0};
     std::atomic<uint64_t> totalSamplesProcessed_{0};
     std::atomic<int> lastBlockSize_{0};
+    
+    // Paint telemetry atomics (read-and-reset for HUD)
+    std::atomic<uint32_t> drainsThisBlock_{0};
+    std::atomic<uint32_t> maskQueueDepth_{0};
 
     // Hybrid mode scratch buffer (preallocated in prepareToPlay)
     juce::AudioBuffer<float> hybridBuffer_;
 
-    // Output latency alignment for non-STFT paths
-    juce::AudioBuffer<float> latencyLine_;
-    int latencyWritePos_ = 0;
     
+
+    // ---- Sample playback state (cross-mode) ----
+    // Shared buffer managed by loader/editor; read on audio thread.
+    std::shared_ptr<juce::AudioBuffer<float>> currentSample_;
+    int64_t  loadedSampleLength_{0};
+    int64_t  playhead_{0};
+    bool     sampleLooping_{false};
+    double   sourceSampleRate_{0.0};
+
+    // Diagnostic / test path flag (handled by atomic at line 331)
+
     // Helper to fetch APVTS values safely (call on audio thread)
     inline float getParamFast(const juce::String& paramId) const noexcept
     {
@@ -423,6 +464,11 @@ public:
     AtlasUpdateQueue& getAtlasUpdateQueue() noexcept { return atlasUpdateQueue; }
     PageManagementQueue& getPageManagementQueue() noexcept { return pageManagementQueue; }
     OfflineStftAnalyzer* getOfflineAnalyzer() const noexcept { return offlineAnalyzer_.get(); }
+    
+    // Thread-safe telemetry accessors for HUD (read-and-reset)
+    uint32_t getDrainsThisBlockAndReset() noexcept { return drainsThisBlock_.exchange(0, std::memory_order_acq_rel); }
+    uint32_t getMaskQueueDepth() const noexcept { return maskQueueDepth_.load(std::memory_order_relaxed); }
+    uint64_t getProcessedBlockCount() const noexcept { return totalBlocksProcessed_.load(std::memory_order_relaxed); }
     
     // Phase 1: Current column tracking for UI synchronization
     uint32_t getCurrentColumnIndex() const noexcept { return currentColumnIndex_.load(std::memory_order_relaxed); }

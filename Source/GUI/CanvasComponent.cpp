@@ -4,6 +4,9 @@
 #include "../Core/DiagnosticLogger.h"
 #include "../Core/SampleLoaderService.h"
 #include "../SpectralCanvasProEditor.h"
+#include "CanvasMaskBuilder.h"
+#include "../DSP/StftPolicy.h"
+#include "../Core/PaintMapping.h"
 #include <chrono>
 
 // Constants for RT-safe paint-to-sound
@@ -193,6 +196,12 @@ void CanvasComponent::mouseDown(const juce::MouseEvent& e)
 {
     lastMousePos = e.position;
 
+    // Save state for undo before starting a new paint stroke
+    if (audioProcessor.getCurrentPath() == SpectralCanvasProAudioProcessor::AudioPath::SpectralResynthesis)
+    {
+        audioProcessor.saveUndoState();
+    }
+
     // Test mode audio feedback
     bool testMode = audioProcessor.apvts.getParameterAsValue(Params::ParameterIDs::testModeActive).getValue();
     if (testMode)
@@ -201,14 +210,16 @@ void CanvasComponent::mouseDown(const juce::MouseEvent& e)
     }
 
     // Convert screen coordinates to normalized [0,1] range
+    float xNormalized = e.position.x / static_cast<float>(getWidth());
     float yNormalized = e.position.y / static_cast<float>(getHeight());
+    xNormalized = juce::jlimit(0.0f, 1.0f, xNormalized);
     yNormalized = juce::jlimit(0.0f, 1.0f, yNormalized);
     
     // Use current brush strength as intensity
     float intensity = juce::jlimit(0.0f, 1.0f, currentBrushStrength);
     
     // Direct RT-safe paint-to-sound using unified interface
-    pushPaintEvent(yNormalized, intensity);
+    pushPaintEvent(xNormalized, yNormalized, intensity);
 
     // Start paint stroke for visual feedback
     currentStroke = PaintStroke{};
@@ -238,14 +249,16 @@ void CanvasComponent::mouseDrag(const juce::MouseEvent& e)
     lastMousePos = e.position;
     
     // Convert screen coordinates to normalized [0,1] range
+    float xNormalized = e.position.x / static_cast<float>(getWidth());
     float yNormalized = e.position.y / static_cast<float>(getHeight());
+    xNormalized = juce::jlimit(0.0f, 1.0f, xNormalized);
     yNormalized = juce::jlimit(0.0f, 1.0f, yNormalized);
     
     // Use current brush strength as intensity
     float intensity = juce::jlimit(0.0f, 1.0f, currentBrushStrength);
     
     // Direct RT-safe paint-to-sound for continuous painting using unified interface
-    pushPaintEvent(yNormalized, intensity);
+    pushPaintEvent(xNormalized, yNormalized, intensity);
     
     // Add point to stroke
     PaintStroke::Point point;
@@ -647,62 +660,75 @@ void CanvasComponent::createAndSendMaskColumnPhase4(juce::Point<float> mousePos)
     }
 }
 
-void CanvasComponent::pushMaskFromScreenY(float y) noexcept
+void CanvasComponent::pushMaskFromScreenXy(float xNorm, float yNorm) noexcept
 {
-    // DEBUG: Log path to understand why paint was blocked
-    juce::Logger::writeToLog("PAINT: getCurrentPath()=" + juce::String(static_cast<int>(audioProcessor.getCurrentPath())));
+    // Get brush intensity from UI state (matches ARTEFACT pattern)
+    float intensity = juce::jlimit(0.0f, 1.0f, currentBrushStrength);
+    if (intensity <= 0.0f) intensity = 1.0f;  // Fallback ensures never zero
     
-    // TESTING: Temporarily bypass path check like we did in pushMaskColumn
-    /*
-    // Only produce in Phase4 mode
-    if (audioProcessor.getCurrentPath() != SpectralCanvasProAudioProcessor::AudioPath::Phase4Synth)
-        return;
-    */
-        
-    static float vals[kNumBins];  // Preallocated scratch buffer (RT-safe)
-    for (int i = 0; i < kNumBins; ++i) vals[i] = 0.0f;
+    // Build MaskColumn using proper timestamp and coordinate mapping
+    ui::MaskBuildConfig config{};
+    config.sampleRate = audioProcessor.getSampleRate();
+    config.stft = dsp::fromAtlasDefaults();
+    config.epochSteadyNanos = audioProcessor.getEpochSteadyNanos();
+    config.tileWidth = 512; // AtlasConfig::TILE_WIDTH
     
-    // Map Y -> bin index (top = high freq, bottom = low freq)
-    const auto bounds = getLocalBounds().toFloat();
-    const float yNorm = juce::jlimit(0.0f, 1.0f, (y - bounds.getY()) / bounds.getHeight());
-    const int k = juce::jlimit(1, kNumBins - 2, 
-                               static_cast<int>(std::round((1.0f - yNorm) * (kNumBins - 1))));
-                               
-    // 3-tap splat for audibility (same as 'i' key that works)
-    auto add = [&](int kk, float v) { vals[kk] = juce::jmax(vals[kk], v); };
-    add(k - 1, 0.25f);
-    add(k, 0.60f);
-    add(k + 1, 0.25f);
+    const uint64_t uiSteadyNanos = static_cast<uint64_t>(juce::Time::getHighResolutionTicks());
+    const uint32_t sequenceNumber = audioProcessor.getNextMaskSequenceNumber();
     
-    // Create MaskColumn and push directly to processor
-    MaskColumn col;
-    col.numBins = kNumBins;
-    col.timestampSamples = static_cast<uint64_t>(std::llround(juce::Time::getMillisecondCounterHiRes() * 0.001));
-    col.sequenceNumber = audioProcessor.getNextMaskSequenceNumber();
-    col.uiTimestampMicros = static_cast<uint64_t>(juce::Time::getHighResolutionTicks());
-    
-    // Copy values to column
-    for (int i = 0; i < kNumBins; ++i) {
-        col.values[i] = vals[i];
+    uint32_t columnIndex = 0;
+    auto currentPath = audioProcessor.getCurrentPath();
+
+    // In SpectralResynthesis mode, map X to the model's timeline.
+    // In Phase4Synth mode, use the live playhead position.
+    if (currentPath == SpectralCanvasProAudioProcessor::AudioPath::SpectralResynthesis && audioProcessor.getSpectralModel().isReady())
+    {
+        const int numFrames = audioProcessor.getSpectralModel().numFrames();
+        if (numFrames > 0) {
+            columnIndex = static_cast<uint32_t>(juce::jlimit(0.0f, 1.0f, xNorm) * (numFrames - 1));
+        }
+    }
+    else // Fallback for Phase4Synth or if model isn't ready
+    {
+        columnIndex = audioProcessor.getCurrentColumnIndex();
     }
     
-    // Push to processor (same API that 'i' key uses)
-    audioProcessor.pushMaskColumn(col);
+    // Create well-formed MaskColumn with proper intensity and coordinate mapping
+    MaskColumn col = ui::buildMaskColumn(yNorm, intensity, columnIndex, uiSteadyNanos, sequenceNumber, config);
     
-    // DIAGNOSTIC: Add queue address and size diagnostics
-    auto& q = audioProcessor.getMaskColumnQueue();
+    // Push with automatic backpressure handling (drops are counted in pushMaskColumn)
+    const bool success = audioProcessor.pushMaskColumn(col);
     
-    // Debug feedback
+    // Optional debug feedback (reduce logging)
     static int paintCallCount = 0;
     ++paintCallCount;
-    if (paintCallCount % 5 == 1) { // Log every 5th call to be more visible
-        juce::Logger::writeToLog("*** DIRECT PAINT SUCCESS: bin=" + juce::String(k) + " mag=0.60 (call #" + juce::String(paintCallCount) + ") ***");
-        juce::Logger::writeToLog("[UI] MaskQueue addr=" + juce::String::toHexString(reinterpret_cast<uintptr_t>(&q)) + " sizeof(MaskColumn)=" + juce::String(sizeof(MaskColumn)));
+    if (paintCallCount % 10 == 1) { // Less frequent logging
+        const int centerBin = paint::uiYToBinTopHigh(yNorm, config.sampleRate, config.stft.fftSize());
+        juce::Logger::writeToLog("Paint: bin=" + juce::String(centerBin) +
+                                 " x-col=" + juce::String(columnIndex) +
+                                 " intensity=" + juce::String(intensity, 2) +
+                                 " success=" + (success ? "true" : "false"));
     }
 }
 
 bool CanvasComponent::keyPressed(const juce::KeyPress& key)
 {
+    // Undo functionality
+    if (key.getTextCharacter() == 'z')
+    {
+        if (audioProcessor.canUndo())
+        {
+            audioProcessor.performUndo();
+            juce::Logger::writeToLog("UNDO: Performed undo.");
+            repaint(); // Repaint to show the undone state (if visually represented)
+        }
+        else
+        {
+            juce::Logger::writeToLog("UNDO: Nothing to undo.");
+        }
+        return true;
+    }
+
     // DEBUG: Test injection with 'i' key to bypass paint path
     if (key.getTextCharacter() == 'i') {
         juce::Logger::writeToLog("*** 'I' KEY PRESSED - INJECTING TEST MASKCOLUMN ***");
@@ -745,9 +771,10 @@ bool CanvasComponent::keyPressed(const juce::KeyPress& key)
 }
 #endif
 
-void CanvasComponent::pushPaintEvent(float y, float intensity)
+void CanvasComponent::pushPaintEvent(float x, float y, float intensity)
 {
     // Clamp inputs to valid range
+    x = juce::jlimit(0.0f, 1.0f, x);
     y = juce::jlimit(0.0f, 1.0f, y);
     intensity = juce::jlimit(0.0f, 1.0f, intensity);
     
@@ -757,12 +784,14 @@ void CanvasComponent::pushPaintEvent(float y, float intensity)
     if (currentPath == SpectralCanvasProAudioProcessor::AudioPath::ModernPaint)
     {
         // Use lightweight 12-byte paint events for modern JUCE DSP path
+        // NOTE: ModernPaint path does not currently use the x-coordinate.
         audioProcessor.pushPaintEvent(y, intensity);
     }
-    else if (currentPath == SpectralCanvasProAudioProcessor::AudioPath::Phase4Synth)
+    else if (currentPath == SpectralCanvasProAudioProcessor::AudioPath::Phase4Synth ||
+             currentPath == SpectralCanvasProAudioProcessor::AudioPath::SpectralResynthesis)
     {
-        // Use legacy MaskColumn system for backward compatibility
-        pushMaskFromScreenY(y);
+        // Use MaskColumn system for spectral painting (Phase4Synth and SpectralResynthesis)
+        pushMaskFromScreenXy(x, y);
     }
     // Other paths (Silent, TestFeeder) don't process paint events
 }

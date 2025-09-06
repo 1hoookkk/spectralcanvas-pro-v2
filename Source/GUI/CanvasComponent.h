@@ -59,7 +59,7 @@ public:
     void setSnapToScale(bool snap);
     
     // Modern paint support
-    void pushPaintEvent(float y, float intensity);
+    void pushPaintEvent(float x, float y, float intensity);
     
     // Editor access for drag-and-drop
     void setParentEditor(juce::Component* editor) { parentEditor_ = editor; }
@@ -127,7 +127,7 @@ private:
     float calculateMedianLatency() const;
     float calculateP95Latency() const;
     void createAndSendMaskColumn(juce::Point<float> mousePos);
-    void pushMaskFromScreenY(float screenY) noexcept;
+    void pushMaskFromScreenXy(float x, float y) noexcept;
     
     // Phase 4 experiment: improved Y-to-bin mapping
 #ifdef PHASE4_EXPERIMENT
