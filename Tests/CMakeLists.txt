@@ -9,6 +9,12 @@ add_executable(RTSafetyTest
     AllocationDetector.cpp
 )
 
+# Test executable: Basic Function Test (quick plugin health check)
+add_executable(BasicFunctionTest
+    BasicFunctionTest.cpp
+    ../Source/SpectralCanvasProAudioProcessor.cpp
+)
+
 # Test executable: Spectral Paint Node validation
 add_executable(SpectralPaintNodeTest
     SpectralPaintNodeTest.cpp
@@ -105,8 +111,28 @@ add_executable(BenchWindowFFT
     BenchWindowFft.cpp
 )
 
+# Test executable: HopFifo and FFT crash pattern test
+add_executable(HopFifoAndFFTTest
+    RT/HopFifoAndFFTTest.cpp
+)
+
+# Test executable: STFT Identity validation
+add_executable(IdentityStftTest
+    IdentityStftTest.cpp
+    TestHarness.cpp
+)
+
+# Test executable: Loop/Seek validation  
+add_executable(LoopSeekTest
+    LoopSeekTest.cpp
+    TestHarness.cpp
+)
+
 target_compile_features(GPUResilienceTest PRIVATE cxx_std_20)
 target_compile_features(BenchWindowFFT PRIVATE cxx_std_20)
+target_compile_features(HopFifoAndFFTTest PRIVATE cxx_std_20)
+target_compile_features(IdentityStftTest PRIVATE cxx_std_20)
+target_compile_features(LoopSeekTest PRIVATE cxx_std_20)
 
 target_link_libraries(GPUResilienceTest PRIVATE
     juce::juce_audio_utils
@@ -117,6 +143,38 @@ target_link_libraries(BenchWindowFFT PRIVATE
     juce::juce_core
     juce::juce_dsp
 )
+
+target_link_libraries(HopFifoAndFFTTest PRIVATE
+    juce::juce_core
+    juce::juce_dsp
+)
+
+target_link_libraries(IdentityStftTest PRIVATE
+    juce::juce_core
+    juce::juce_dsp
+    juce::juce_audio_utils
+)
+
+target_link_libraries(LoopSeekTest PRIVATE
+    juce::juce_core
+    juce::juce_dsp
+    juce::juce_audio_utils
+)
+
+# Test executable: Spectral Resynthesis Identity validation
+add_executable(SpectralResynthesisIdentityTest
+    SpectralResynthesisIdentityTest.cpp
+)
+
+target_compile_features(SpectralResynthesisIdentityTest PRIVATE cxx_std_20)
+
+target_link_libraries(SpectralResynthesisIdentityTest PRIVATE
+    juce::juce_audio_utils
+    juce::juce_dsp
+    gtest
+    gtest_main
+)
+
 
 # Windows-specific D3D11 libraries for GPU tests
 if(WIN32)
@@ -136,6 +194,9 @@ target_include_directories(QueueTest PRIVATE "../Source")
 target_include_directories(PerfHarness PRIVATE "../Source")
 target_include_directories(GPUResilienceTest PRIVATE "../Source")
 target_include_directories(BenchWindowFFT PRIVATE "../Source")
+target_include_directories(IdentityStftTest PRIVATE "../Source")
+target_include_directories(LoopSeekTest PRIVATE "../Source")
+target_include_directories(SpectralResynthesisIdentityTest PRIVATE "../Source")
 
 # Compiler flags for testing
 if(MSVC)
@@ -164,6 +225,10 @@ add_test(NAME QueueValidation COMMAND QueueTest)
 add_test(NAME PerformanceBaseline COMMAND PerfHarness --baseline)
 add_test(NAME PerformanceJSON COMMAND PerfHarness --baseline --emit-json ${CMAKE_CURRENT_BINARY_DIR}/perf_metrics.json)
 add_test(NAME GPUResilience COMMAND GPUResilienceTest)
+add_test(NAME HopFifoFFTCrashPattern COMMAND HopFifoAndFFTTest)
+add_test(NAME IdentitySTFT COMMAND IdentityStftTest)
+add_test(NAME LoopSeek COMMAND LoopSeekTest)
+add_test(NAME SpectralResynthesisIdentity COMMAND SpectralResynthesisIdentityTest)
 
 # Set test properties
 set_tests_properties(RTSafety PROPERTIES
@@ -199,6 +264,21 @@ set_tests_properties(PerformanceJSON PROPERTIES
 set_tests_properties(GPUResilience PROPERTIES
     TIMEOUT 60
     LABELS "gpu;resilience;d3d11"
+)
+
+set_tests_properties(IdentitySTFT PROPERTIES
+    TIMEOUT 30
+    LABELS "dsp;stft;identity;validation"
+)
+
+set_tests_properties(LoopSeek PROPERTIES
+    TIMEOUT 30
+    LABELS "dsp;loop;seek;validation"
+)
+
+set_tests_properties(SpectralResynthesisIdentity PROPERTIES
+    TIMEOUT 30
+    LABELS "dsp;stft;identity;validation"
 )
 
 # RT safety compile-time option

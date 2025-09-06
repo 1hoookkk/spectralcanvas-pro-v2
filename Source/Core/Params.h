@@ -60,6 +60,8 @@ namespace ParameterIDs
     const juce::String visualGamma = "visual_gamma";       // 0.5..1.5 display gamma (Phase 3)
     const juce::String visualGain = "visual_gain";         // 0..4 display gain (Phase 3)
     const juce::String freezeDisplay = "freeze_display";   // Freeze/scroll toggle (Phase 3)
+    // Transport / Playback
+    const juce::String loopSample = "loop_sample";         // Off by default; loops raw sample paths when enabled
     
     // Phase 5 Performance HUD Parameters  
     const juce::String showPerfHud = "show_perf_hud";     // Performance overlay toggle
@@ -160,6 +162,9 @@ namespace ParameterRanges
     // Phase 5 Performance HUD
     const juce::NormalisableRange<float> showPerfHudRange(0.0f, 1.0f, 1.0f);
     const float showPerfHudDefault = 0.0f; // Off by default
+    
+    // Transport / Playback
+    const bool loopSampleDefault = false;
     
     // Master
     const juce::NormalisableRange<float> gainRange(-24.0f, 24.0f, 0.01f);
@@ -303,6 +308,11 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     
     parameters.push_back(std::make_unique<juce::AudioParameterBool>(
         ParameterIDs::freezeDisplay, "Freeze Display", false));
+
+    // Transport / Playback
+    parameters.push_back(std::make_unique<juce::AudioParameterBool>(
+        ParameterIDs::loopSample, "Loop Sample",
+        ParameterRanges::loopSampleDefault));
     
     // Phase 5 Performance HUD
     parameters.push_back(std::make_unique<juce::AudioParameterFloat>(

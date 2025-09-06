@@ -31,6 +31,7 @@ private:
     juce::Slider maskDepthSlider;
     juce::Slider brushStrengthSlider;
     juce::ToggleButton debugToggleButton;
+    juce::ToggleButton loopSampleToggle;
 
     // Labels (minimal styling)
     juce::Label modeLabel;
@@ -39,6 +40,7 @@ private:
     juce::Label maskDepthLabel;
     juce::Label brushStrengthLabel; 
     juce::Label debugLabel;
+    juce::Label loopLabel;
 
     // Parameter attachments
     std::unique_ptr<juce::ComboBoxParameterAttachment> modeAttachment;
@@ -47,6 +49,7 @@ private:
     std::unique_ptr<juce::SliderParameterAttachment> maskDepthAttachment;
     std::unique_ptr<juce::SliderParameterAttachment> brushStrengthAttachment;
     std::unique_ptr<juce::ButtonParameterAttachment> debugToggleAttachment;
+    std::unique_ptr<juce::ButtonParameterAttachment> loopToggleAttachment;
 
     void setupControl(juce::Component& control, juce::Label& label, const juce::String& text);
 
