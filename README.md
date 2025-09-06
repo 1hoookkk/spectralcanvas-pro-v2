@@ -1,4 +1,4 @@
-# SpectralCanvas Pro: Paint Sound, Sculpt Music
+# spectralCanvas Pro: Paint Sound, Sculpt Music
 
 SpectralCanvas Pro is a revolutionary spectral audio editor and synthesizer that transforms sound into a living visual canvas. Inspired by pioneering visual music tools like MetaSynth, it allows you to paint sound directly onto a spectrogram, turning intuitive gestures into complex and beautiful music.
 
