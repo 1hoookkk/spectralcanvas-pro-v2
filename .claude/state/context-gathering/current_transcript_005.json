@@ -1,0 +1,341 @@
+[
+  {
+    "role": "user",
+    "content": "Understood. Your instructions are perfectly clear. You want me to act as a technical lead, providing an overview and the necessary code and assets to execute the excellent plan from Claude Code. I will not edit any files directly.\n\nThis is a superb plan. It establishes a professional, robust, and maintainable foundation for the project. Executing this will prevent the architectural decay that plagued the original repository.\n\nHere is the complete overview and the assets you need to complete Phase 1.\n\n### **Overview**\n\nThe plan correctly prioritizes creating a rock-solid, real-time safe foundation before adding any complex features. We will:\n1.  **Build the Core Utilities:** Create the lock-free queue (`SpscQueueLite.h`) and the telemetry data structure (`Snapshot.h`). These are the essential building blocks for communication and observability.\n2.  **Recreate the Plugin:** Since you've deleted the old files, we will create new, clean `Processor` and `Editor` files in their correct architectural locations (`Source/Core/` and `Source/UI/`).\n3.  **Wire Everything Together:** The new Processor will use the queue and snapshot. The new Editor will generate paint events and send them to the Processor.\n4.  **Enforce Cleanliness:** We will create the \"ghost code\" prevention script and git hook to ensure the codebase *stays* clean from this point forward.\n\nHere is the code you will need for each step.\n\n---\n\n### **1. Core Data Structures**\n\nFirst, we need the `MaskColumn` struct that will be sent from the UI to the audio thread.\n\n**File: `Source/Core/MaskColumn.h`**\n```cpp\n#pragma once\n#include <JuceHeader.h>\n\n// A structure to hold a single vertical \"slice\" of paint data.\n// This is the event that will be sent from the UI to the audio thread.\nstruct MaskColumn\n{\n    // We use a fixed-size array for real-time safety. No allocations.\n    static constexpr int kNumBins = 257; // Example size, matches a 512-point FFT\n    std::array<float, kNumBins> values;  // Per-bin gain values from the paint stroke\n\n    // High-resolution timestamp from the UI thread for latency tracking.\n    double timestampUiMicros = 0.0;\n\n    // A sequence number to detect out-of-order events if needed.\n    uint32_t sequenceNumber = 0;\n};\n```\n\n---\n\n### **2. RT-Safe Infrastructure**\n\nNow, the lock-free queue and the telemetry snapshot.\n\n**File: `Source/Utils/SpscQueueLite.h`**\n```cpp\n#pragma once\n#include <atomic>\n#include <cstddef>\n#include <type_traits>\n\n// A lock-free, single-producer, single-consumer (SPSC) queue for RT-safe communication.\ntemplate<typename T, size_t Capacity>\nclass SpscQueueLite\n{\npublic:\n    static_assert(std::is_trivially_copyable_v<T>, \"Type T must be trivially copyable for RT-safety\");\n    static_assert(Capacity > 0, \"Capacity must be greater than zero\");\n\n    // Pushes an item to the queue.\n    // Returns true on success, false if the queue is full.\n    // This is non-blocking and safe to call from a non-real-time thread (e.g., UI thread).\n    bool tryPush(const T& item) noexcept\n    {\n        auto writePos = writeIndex.load(std::memory_order_relaxed);\n        auto nextWritePos = (writePos + 1) % Capacity;\n\n        if (nextWritePos == readIndex.load(std::memory_order_acquire))\n        {\n            return false; // Queue is full\n        }\n\n        buffer[writePos] = item;\n        writeIndex.store(nextWritePos, std::memory_order_release);\n        return true;\n    }\n\n    // Pops an item from the queue.\n    // Returns true on success, false if the queue is empty.\n    // This is non-blocking and safe to call from a real-time thread (e.g., audio thread).\n    bool tryPop(T& item) noexcept\n    {\n        auto readPos = readIndex.load(std::memory_order_relaxed);\n\n        if (readPos == writeIndex.load(std::memory_order_acquire))\n        {\n            return false; // Queue is empty\n        }\n\n        item = buffer[readPos];\n        readIndex.store((readPos + 1) % Capacity, std::memory_order_release);\n        return true;\n    }\n\n    size_t size() const noexcept\n    {\n        auto readPos = readIndex.load(std::memory_order_acquire);\n        auto writePos = writeIndex.load(std::memory_order_acquire);\n        if (writePos >= readPos)\n            return writePos - readPos;\n        return Capacity - readPos + writePos;\n    }\n\nprivate:\n    T buffer[Capacity];\n    alignas(64) std::atomic<size_t> readIndex = {0};\n    alignas(64) std::atomic<size_t> writeIndex = {0};\n};\n```\n\n**File: `Source/Core/Snapshot.h`**\n```cpp\n#pragma once\n#include <atomic>\n#include <cstdint>\n\n// A collection of atomic counters for real-time safe telemetry.\n// The UI thread can read these values to display performance metrics\n// without locking the audio thread. Relaxed memory order is sufficient\n// as we don't need strict ordering, just eventual consistency for display.\nstruct Snapshot\n{\n    std::atomic<uint64_t> processedBlocks{0};\n    std::atomic<size_t> queueDepth{0};\n    std::atomic<uint32_t> drainsThisBlock{0};\n    std::atomic<uint32_t> rejectedPushes{0};\n};\n```\n\n---\n\n### **3. Recreate and Wire the Plugin**\n\nHere are the new, clean Processor and Editor files, wired up to use the new infrastructure.\n\n**File: `Source/Core/SpectralCanvasProProcessor.h`**\n```cpp\n#pragma once\n#include <JuceHeader.h>\n#include \"../Utils/SpscQueueLite.h\"\n#include \"MaskColumn.h\"\n#include \"Snapshot.h\"\n\nclass SpectralCanvasProProcessor : public juce::AudioProcessor\n{\npublic:\n    SpectralCanvasProProcessor();\n\n    void prepareToPlay(double sampleRate, int samplesPerBlock) override;\n    void releaseResources() override;\n    void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;\n\n    juce::AudioProcessorEditor* createEditor() override;\n    bool hasEditor() const override { return true; }\n    \n    // --- Communication Methods ---\n    // Called by the UI thread to push a paint event.\n    void pushPaintEvent(const MaskColumn& maskColumn);\n    // Called by the UI thread to get the latest telemetry.\n    void getSnapshot(Snapshot& snapshot) const;\n\n    // Standard JUCE boilerplate...\n    const juce::String getName() const override { return \"SpectralCanvasPro\"; }\n    bool acceptsMidi() const override { return false; }\n    bool producesMidi() const override { return false; }\n    double getTailLengthSeconds() const override { return 0.0; }\n    int getNumPrograms() override { return 1; }\n    int getCurrentProgram() override { return 0; }\n    void setCurrentProgram(int) override {}\n    const juce::String getProgramName(int) override { return {}; }\n    void changeProgramName(int, const juce::String&) override {}\n    void getStateInformation(juce::MemoryBlock&) override {}\n    void setStateInformation(const void*, int) override {}\n\nprivate:\n    // The lock-free queue for UI->audio communication.\n    SpscQueueLite<MaskColumn, 1024> maskQueue_;\n    \n    // The snapshot of telemetry counters.\n    Snapshot currentSnapshot_;\n    \n    // Simple gain for audio ducking demo.\n    std::atomic<float> paintGain_{1.0f};\n\n    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectralCanvasProProcessor)\n};\n```\n\n**File: `Source/Core/SpectralCanvasProProcessor.cpp`**\n```cpp\n#include \"SpectralCanvasProProcessor.h\"\n#include \"../UI/SpectralCanvasProEditor.h\" // Note: Cross-module include is okay for creation\n\nSpectralCanvasProProcessor::SpectralCanvasProProcessor()\n    : AudioProcessor(BusesProperties().withInput(\"Input\", juce::AudioChannelSet::stereo(), true)\n                                      .withOutput(\"Output\", juce::AudioChannelSet::stereo(), true))\n{}\n\nvoid SpectralCanvasProProcessor::prepareToPlay(double /*sampleRate*/, int /*samplesPerBlock*/) {}\nvoid SpectralCanvasProProcessor::releaseResources() {}\n\nvoid SpectralCanvasProProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)\n{\n    // 1. Update telemetry\n    currentSnapshot_.processedBlocks.fetch_add(1, std::memory_order_relaxed);\n    currentSnapshot_.queueDepth.store(maskQueue_.size(), std::memory_order_relaxed);\n\n    // 2. Perform a bounded drain of the paint event queue.\n    uint32_t drains = 0;\n    MaskColumn column;\n    while (drains < 16 && maskQueue_.tryPop(column))\n    {\n        // For now, we just signal that we are \"painting\".\n        // A real implementation would process the `column` data.\n        paintGain_ = 0.3f; // Duck the audio\n        drains++;\n    }\n    currentSnapshot_.drainsThisBlock.store(drains, std::memory_order_relaxed);\n\n    // 3. Apply the simple audio effect.\n    buffer.applyGain(paintGain_.load());\n\n    // 4. Simple decay for the ducking effect.\n    if (paintGain_.load() < 1.0f)\n    {\n        paintGain_ = paintGain_ * 0.99f + 0.01f;\n        if (paintGain_ > 0.99f) paintGain_ = 1.0f;\n    }\n}\n\nvoid SpectralCanvasProProcessor::pushPaintEvent(const MaskColumn& maskColumn)\n{\n    if (!maskQueue_.tryPush(maskColumn))\n    {\n        // If the push fails, the queue is full. Update telemetry.\n        currentSnapshot_.rejectedPushes.fetch_add(1, std::memory_order_relaxed);\n    }\n}\n\nvoid SpectralCanvasProProcessor::getSnapshot(Snapshot& snapshot) const\n{\n    // This is not a deep copy, but we are just copying atomic values.\n    // A more robust implementation might use a double buffer for the snapshot.\n    snapshot.processedBlocks.store(currentSnapshot_.processedBlocks.load(std::memory_order_relaxed));\n    snapshot.queueDepth.store(currentSnapshot_.queueDepth.load(std::memory_order_relaxed));\n    snapshot.drainsThisBlock.store(currentSnapshot_.drainsThisBlock.load(std::memory_order_relaxed));\n    snapshot.rejectedPushes.store(currentSnapshot_.rejectedPushes.load(std::memory_order_relaxed));\n}\n\njuce::AudioProcessorEditor* SpectralCanvasProProcessor::createEditor()\n{\n    return new SpectralCanvasProEditor(*this);\n}\n\n// JUCE boilerplate to create the plugin instance\njuce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()\n{\n    return new SpectralCanvasProProcessor();\n}\n```\n\n**File: `Source/UI/SpectralCanvasProEditor.h`**\n```cpp\n#pragma once\n#include \"../Core/SpectralCanvasProProcessor.h\"\n\nclass SpectralCanvasProEditor : public juce::AudioProcessorEditor, private juce::Timer\n{\npublic:\n    explicit SpectralCanvasProEditor(SpectralCanvasProProcessor&);\n\n    void paint(juce::Graphics&) override;\n    \n    void mouseDown(const juce::MouseEvent& event) override;\n    void mouseDrag(const juce::MouseEvent& event) override;\n\nprivate:\n    void timerCallback() override;\n    void sendPaintEvent(const juce::MouseEvent& event);\n\n    SpectralCanvasProProcessor& processor_;\n    Snapshot displaySnapshot_; // A non-atomic copy for display\n    uint32_t sequenceNumber_ = 0;\n\n    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectralCanvasProEditor)\n};\n```\n\n**File: `Source/UI/SpectralCanvasProEditor.cpp`**\n```cpp\n#include \"SpectralCanvasProEditor.h\"\n\nSpectralCanvasProEditor::SpectralCanvasProEditor(SpectralCanvasProProcessor& p)\n    : AudioProcessorEditor(&p), processor_(p)\n{\n    setSize(400, 300);\n    startTimerHz(30); // Repaint and update telemetry at 30fps\n}\n\nvoid SpectralCanvasProEditor::paint(juce::Graphics& g)\n{\n    g.fillAll(juce::Colours::black);\n    g.setColour(juce::Colours::white);\n    g.setFont(15.0f);\n\n    g.drawText(\"Paint here to duck audio\", getLocalBounds().reduced(10), juce::Justification::centred, true);\n\n    // Display telemetry from the snapshot\n    auto bounds = getLocalBounds().reduced(10);\n    g.drawText(\"Processed Blocks: \" + juce::String(displaySnapshot_.processedBlocks.load()),\n        bounds.removeFromTop(20), juce::Justification::topLeft);\n    g.drawText(\"Queue Depth: \" + juce::String(displaySnapshot_.queueDepth.load()),\n        bounds.removeFromTop(20), juce::Justification::topLeft);\n    g.drawText(\"Drains This Block: \" + juce::String(displaySnapshot_.drainsThisBlock.load()),\n        bounds.removeFromTop(20), juce::Justification::topLeft);\n    g.drawText(\"Rejected Pushes: \" + juce::String(displaySnapshot_.rejectedPushes.load()),\n        bounds.removeFromTop(20), juce::Justification::topLeft);\n}\n\nvoid SpectralCanvasProEditor::mouseDown(const juce::MouseEvent& event)\n{\n    sendPaintEvent(event);\n}\n\nvoid SpectralCanvasProEditor::mouseDrag(const juce::MouseEvent& event)\n{\n    sendPaintEvent(event);\n}\n\nvoid SpectralCanvasProEditor::sendPaintEvent(const juce::MouseEvent& event)\n{\n    MaskColumn column;\n    // A real implementation would map the mouse position to frequency bins.\n    // For now, we just create a dummy event.\n    float gain = 1.0f - (event.position.getY() / (float)getHeight());\n    std::fill(column.values.begin(), column.values.end(), gain);\n    \n    column.timestampUiMicros = juce::Time::getHighResolutionTicks() * 1000000.0 / juce::Time::getHighResolutionTicksPerSecond();\n    column.sequenceNumber = ++sequenceNumber_;\n\n    processor_.pushPaintEvent(column);\n}\n\nvoid SpectralCanvasProEditor::timerCallback()\n{\n    // Get the latest snapshot from the processor to update our display.\n    processor_.getSnapshot(displaySnapshot_);\n    repaint();\n}\n```\n\n---\n\n### **4. Ghost Code Prevention**\n\nThese tools will enforce a clean codebase going forward.\n\n**File: `tools/check_orphans.py`**\n```python\nimport os\nimport re\nimport sys\n\ndef find_cmake_sources(cmake_file):\n    \"\"\"Parses a CMakeLists.txt file to find all listed source files.\"\"\"\n    sources = set()\n    try:\n        with open(cmake_file, 'r') as f:\n            content = f.read()\n            # This is a simplified regex; a real one might need to be more robust\n            matches = re.findall(r'Source/([\\w/]+\\.(?:cpp|h))', content, re.IGNORECASE)\n            for match in matches:\n                sources.add(match.replace('\\\\', '/'))\n    except FileNotFoundError:\n        print(f\"Warning: CMake file not found at {cmake_file}\")\n    return sources\n\ndef find_disk_sources(source_dir):\n    \"\"\"Walks the source directory to find all .cpp and .h files.\"\"\"\n    disk_files = set()\n    for root, dirs, files in os.walk(source_dir):\n        # Exclude experimental directories by convention\n        if 'Experimental' in dirs:\n            dirs.remove('Experimental')\n            \n        for file in files:\n            if file.lower().endswith(('.cpp', '.h')):\n                full_path = os.path.join(root, file)\n                relative_path = os.path.relpath(full_path, source_dir).replace('\\\\', '/')\n                disk_files.add(relative_path)\n    return disk_files\n\ndef main():\n    \"\"\"Main script execution.\"\"\"\n    script_dir = os.path.dirname(os.path.realpath(__file__))\n    project_root = os.path.abspath(os.path.join(script_dir, '..'))\n    cmake_path = os.path.join(project_root, 'CMakeLists.txt')\n    source_path = os.path.join(project_root, 'Source')\n\n    cmake_sources = find_cmake_sources(cmake_path)\n    disk_sources = find_disk_sources(source_path)\n    \n    orphans = disk_sources - cmake_sources\n    \n    if orphans:\n        print(\"Error: Found orphaned source files not listed in CMakeLists.txt:\")\n        for orphan in sorted(list(orphans)):\n            print(f\"  - Source/{orphan}\")\n        sys.exit(1)\n    else:\n        print(\"Success: No orphaned source files found.\")\n        sys.exit(0)\n\nif __name__ == \"__main__\":\n    main()\n```\n\n**File: `.githooks/pre-commit`**\n```sh\n#!/bin/sh\necho \"Running pre-commit hook: Checking for orphaned files...\"\n\n# Ensure we are running from the repository root\ncd \"$(git rev-parse --show-toplevel)\"\n\n# Run the orphan checker script\npython tools/check_orphans.py\nEXIT_CODE=$?\n\nif [ $EXIT_CODE -ne 0 ]; then\n    echo \"Commit rejected. Please add the orphaned files to CMakeLists.txt or remove them.\"\n    exit 1\nfi\n\necho \"Pre-commit checks passed.\"\nexit 0\n```\n**To set up the git hook, run this command once from your terminal:**\n`git config core.hooksPath .githooks`\n\n---\n\n### **5. Updated `CMakeLists.txt`**\n\nFinally, here is the `CMakeLists.txt` updated to reflect the new structure and files.\n\n**File: `CMakeLists.txt`**\n```cmake\ncmake_minimum_required(VERSION 3.22)\nproject(SpectralCanvasPro VERSION 1.0.0)\n\n# Fetch JUCE and set it up\nfind_package(JUCE CONFIG REQUIRED)\n\n# Define our source file groups for organization\nset(SC_CORE_SOURCES\n    Source/Core/SpectralCanvasProProcessor.cpp\n    Source/Core/MaskColumn.h\n    Source/Core/Snapshot.h\n)\n\nset(SC_UI_SOURCES\n    Source/UI/SpectralCanvasProEditor.cpp\n)\n\nset(SC_UTILS_SOURCES\n    Source/Utils/SpscQueueLite.h\n)\n\n# Add the plugin target\njuce_add_plugin(SpectralCanvasPro\n    COMPANY_NAME \"YourCompany\"\n    PLUGIN_VERSION 1.0.0\n    IS_SYNTH FALSE\n    NEEDS_MIDI_INPUT FALSE\n    COPY_PLUGIN_AFTER_BUILD TRUE\n    PLUGIN_CODE \"SpcP\"\n    PRODUCT_NAME \"SpectralCanvasPro\"\n)\n\n# Add all our source files to the target\ntarget_sources(SpectralCanvasPro\n    PRIVATE\n    ${SC_CORE_SOURCES}\n    ${SC_UI_SOURCES}\n    ${SC_UTILS_SOURCES}\n)\n\n# Add JUCE modules\ntarget_link_libraries(SpectralCanvasPro\n    PRIVATE\n        juce::juce_audio_processors\n        juce::juce_gui_extra\n)\n```\n\nThis completes the asset package for Phase 1. With these pieces in place, you will have a clean, robust, and maintainable foundation, ready for the exciting work of porting the advanced DSP. Got it. Here’s a tight, practical spec with clear choices, quick “because…” rationales, and the tricky bits spelled out.\n\n# 1) Direct Answers + Rationale\n\n**Q: Window function choice?**\n**A:** Hann (analysis/synthesis **sqrt-Hann** pair) with **75% overlap**.\n**Rationale:** Hann gives low sidelobes with good temporal localization. For painting responsiveness you want shorter hops; 75% overlap (hop = N/4) is the sweet spot. Use **sqrt-Hann** so COLA holds at 75% (plain Hann has perfect COLA at 50%, not 75%). Blackman-Harris suppresses sidelobes more but smears time; Kaiser needs parameter tuning and still tends to broaden lobes.\n\n**Q: Overlap strategy?**\n**A:** **75% overlap (4× redundancy)**.\n**Rationale:** Better paint→audio responsiveness (hop = N/4) and smoother parameter changes. 50% is choppier; 87.5% is overkill CPU-wise unless you need very fine temporal control.\n\n**Q: FFT size scaling?**\n**A:** **Adaptive per sample rate to keep \\~45–47 Hz/bin.**\n\n* 44.1/48 kHz → **N=1024** (Hz/bin ≈ 43.1 / 46.9)\n* 88.2/96 kHz → **N=2048** (≈ 43.1 / 46.9)\n  **Rationale:** Keeps perceptual frequency resolution consistent across 44.1/48/96 without huge CPU jumps. Hop = N/4 holds responsiveness constant.\n\n**Q: Bounded work (≤16 mask columns per block)?**\n**A:** Process **whole columns per hop** on the audio thread. Feed columns via a **lock-free SPSC ring buffer** from the UI/paint thread; **double-buffer** the “current/next” columns in the audio thread.\n**Rationale:** Deterministic, bounded work per hop; no per-sample jitter. SPSC avoids locks; double-buffer avoids tearing.\n\n**Q: Memory layout for masks/bins?**\n**A:** **Column-major (time×bin)** where each frame (column) is a contiguous `numBins` vector.\n**Rationale:** Applying a mask is a straight vector multiply per frame → cache-friendly. It also aligns with per-hop processing.\n\n**Q: Masking thresholds: pre-FFT or post-FFT?**\n**A:** **Post-FFT (spectral domain)** since your engine outputs per-bin thresholds.\n**Rationale:** Directly comparable to bin magnitudes; no error-prone time-to-freq mapping.\n\n**Q: Gain smoothing?**\n**A:** **Per-bin one-pole** in **dB**, with fast attack / slower release (e.g., **attack 2–5 ms**, **release 40–120 ms**), optionally **Bark-band pre-smoothing** before per-bin expansion.\n**Rationale:** Avoids zippering and musical pumping; respects masking dynamics.\n\n**Q: Phase handling?**\n**A:** **Preserve exact phase** of analysis bins; for larger magnitude edits, use **identity phase-locking** to the local peak bin (thresholded).\n**Rationale:** Keeps transients crisp and avoids chorusing while permitting moderate spectral reshapes.\n\n**Q: Y-axis mapping?**\n**A:** **Bark bands** for UI mapping (24 bands), with linear interpolation back to bins.\n**Rationale:** Matches the psychoacoustic engine, keeps user intent perceptually anchored.\n\n**Q: Temporal quantization of paint events?**\n**A:** **Snap to hop boundaries**; optionally **interpolate gains between consecutive frames** for sub-hop timing feel.\n**Rationale:** Avoids phase smear; interpolation gives “in-between” control without artifacts.\n\n**Q: Mask decay?**\n**A:** **Exponential** in dB with **Bark-band dependent release** (e.g., lows 80–150 ms, highs 30–70 ms).\n**Rationale:** Tracks masking persistence; keeps UI strokes feeling “musical.”\n\n**Q: Latency reporting?**\n**A:** Report **N/2** samples (frame-centered) to the host.\n**Rationale:** True group delay of STFT with symmetric windowing. DAWs compensate best with a single constant figure. (If you must be strictly causal, report **N−hop**, but N/2 is standard and simpler.)\n\n**Q: Lookahead for transients?**\n**A:** **No lookahead** for painting (keep latency minimal).\n**Rationale:** User responsiveness > small transient gains. Offer an **optional +1 hop** mode as a preference if needed.\n\n**Q: Thresholds: hard limit or soft target?**\n**A:** **Soft target (downward compression)** with a **soft-knee** around the threshold; also **limit maximum attenuation** when already below threshold to stay masked.\n**Rationale:** Hard clamps zipper; soft targets are transparent and robust.\n\n**Q: Paint model: additive or subtractive?**\n**A:** **Primarily subtractive (attenuation)**.\n**Rationale:** Boosting easily breaks masking and reveals phase/quantization artifacts. If boosting, constrain to **≤6 dB**, spread across the Bark band, and slew-limit.\n\n**Most critical: Minimum viable STFT that preserves phase coherence for real-time painting?**\n\n* **sqrt-Hann** analysis/synthesis, **N adaptive** (1024/2048), **hop=N/4**, **OLA synthesis**, **preserve phase**, **optional identity phase-locking**, **column-major per-frame masks**, **per-bin dB smoothing**, **SPSC ring buffer** for paint columns. That’s it.\n\n---\n\n# 2) Key Parameters as Constants\n\n```cpp\n// Recommended STFT parameters (adaptive)\nconstexpr int  WINDOW_TYPE              = HANN_SQRT_PAIR; // sqrt-Hann analysis/synthesis\nconstexpr int  FFT_SIZE_44K_48K         = 1024;\nconstexpr int  FFT_SIZE_88K_96K         = 2048;\nconstexpr int  OVERLAP_FACTOR           = 4;              // 75% overlap\n// at runtime:\nint FFT_SIZE   = (sampleRate >= 88000 ? FFT_SIZE_88K_96K : FFT_SIZE_44K_48K);\nint HOP_SIZE   = FFT_SIZE / OVERLAP_FACTOR;\n\nconstexpr float PHASE_LOCK_THRESHOLD    = 0.8f;           // fraction of local-peak magnitude\nconstexpr float MAX_BOOST_DB            = 6.0f;           // constrain boosts\nconstexpr float MAX_EXTRA_CUT_BELOW_THR = 12.0f;          // don’t over-cut when already masked\n\n// Smoothing (convert ms to per-hop coefficients at init)\nconstexpr float ATTACK_MS               = 3.0f;\nconstexpr float RELEASE_MS              = 80.0f;\n```\n\n---\n\n# 3) Critical Algorithm Snippets\n\n**Window pair (sqrt-Hann) and COLA:**\n\n```cpp\n// analysisWindow[n] = sqrt(0.5f * (1 - cos(2π n/(N-1))))\n// synthesisWindow[n] = analysisWindow[n]; // sqrt-Hann pair\n// With hop = N/4 this satisfies COLA when overlap-added.\n```\n\n**Apply masks while preserving phase + optional identity phase-locking:**\n\n```cpp\nvoid applySpectralMask(std::complex<float>* X, const float* mask, int numBins) {\n    for (int k = 0; k < numBins; ++k) {\n        float mag   = std::abs(X[k]);\n        float phase = std::arg(X[k]);\n        mag *= mask[k];                    // mask is linear gain\n        X[k] = std::polar(mag, phase);     // preserve phase\n    }\n}\n\nvoid identityPhaseLock(std::complex<float>* X, int numBins) {\n    // Lock phases of neighbors to dominant peaks to maintain coherent transients.\n    for (int k = 1; k < numBins-1; ++k) {\n        float mk   = std::abs(X[k]);\n        if (mk <= 0.0f) continue;\n        // simple 3-bin local-peak detection\n        if (mk > PHASE_LOCK_THRESHOLD * std::max(std::abs(X[k-1]), std::abs(X[k+1]))) {\n            float ph = std::arg(X[k]);\n            // pull neighbors' phases slightly toward the peak phase\n            for (int n : {k-1, k+1}) {\n                float mn   = std::abs(X[n]);\n                float ph_n = std::arg(X[n]);\n                float w    = 0.5f; // gentle pull\n                float ph_new = ph_n + w * std::atan2(std::sin(ph - ph_n), std::cos(ph - ph_n));\n                X[n] = std::polar(mn, ph_new);\n            }\n        }\n    }\n}\n```\n\n**Soft target vs threshold (downward compression in dB with soft-knee):**\n\n```cpp\ninline float db2lin(float dB) { return std::pow(10.0f, dB/20.0f); }\ninline float lin2db(float x)  { return 20.0f * std::log10(std::max(x, 1e-12f)); }\n\nvoid computeGainFromThreshold(const float* mag, const float* thr, float* outGain, int numBins) {\n    const float ratio = 4.0f;     // stronger compression below threshold\n    const float knee  = 6.0f;     // dB soft-knee around threshold\n\n    for (int k = 0; k < numBins; ++k) {\n        float mdB  = lin2db(mag[k]);\n        float tdB  = lin2db(thr[k]);\n        float diff = mdB - tdB;                   // negative if below threshold\n\n        // soft knee around 0 dB\n        float x = (diff + knee*0.5f) / knee;      // -0.5..+0.5 around knee center\n        float kneeGain = (x < 0 ? (1.0f + x) : 1.0f); // gentle slope into compression\n\n        float comp_dB = (diff < 0 ? (diff * (1.0f - 1.0f/ratio)) : 0.0f) * kneeGain;\n        float g = db2lin(-comp_dB);\n\n        // Don’t over-attenuate content already hidden: cap extra cuts\n        if (diff < 0) {\n            float maxCut = db2lin(-MAX_EXTRA_CUT_BELOW_THR);\n            g = std::max(g, maxCut);\n        }\n        outGain[k] = g;\n    }\n}\n```\n\n**Per-bin smoothing (in dB):**\n\n```cpp\nstruct OnePole { float y=0; float a=0, b=1; };\ninline void setOnePole(OnePole& f, float timeMs, float hopSeconds) {\n    float alpha = std::exp(-hopSeconds / (timeMs * 0.001f));\n    f.a = alpha; f.b = 1.0f - alpha;\n}\n\nvoid smoothGainsDB(const float* targetLin, float* stateDB, float* outLin, OnePole& atk, OnePole& rel, int numBins) {\n    for (int k = 0; k < numBins; ++k) {\n        float tDB = lin2db(targetLin[k]);\n        bool isAttenuating = (tDB < stateDB[k]);\n        float a = isAttenuating ? atk.a : rel.a;\n        float b = isAttenuating ? atk.b : rel.b;\n        stateDB[k] = a * stateDB[k] + b * tDB;\n        outLin[k]  = db2lin(stateDB[k]);\n    }\n}\n```\n\n**OLA pipeline (bounded per-hop work):**\n\n```cpp\n// Audio thread per hop:\nfft.forward(windowedFrame, spectrum);                 // analysis\nmagFromComplex(spectrum, mag);\nPsychoacousticMaskingEngine::computeThreshold(mag, thr);\n\ncomputeGainFromThreshold(mag, thr, thrGain, numBins); // soft target from masking\nmergePaintAndMaskGains(paintGain, thrGain, targetGain); // min in dB for subtractive\n\nsmoothGainsDB(targetGain, gainStateDB, smoothedGain, atk, rel);\n\napplySpectralMask(spectrum, smoothedGain, numBins);\nidentityPhaseLock(spectrum, numBins);                 // optional\n\nfft.inverse(spectrum, timeBuffer);\nolaAdd(timeBuffer, synthWindow, hopSize);             // synthesis with sqrt-Hann\n```\n\n**Merging paint + masking (subtractive-first):**\n\n```cpp\n// paintGain, thrGain are linear. Convert to dB, take the *more* attenuating one.\ninline float mergeOne(float gPaint, float gThr) {\n    float p = lin2db(gPaint);\n    float t = lin2db(gThr);\n    return db2lin(std::min(p, t)); // subtractive bias\n}\n```\n\n---\n\n# 4) RT-Safety Warnings / Gotchas\n\n* **Warm up** the FFT (and any plan creation) in `prepareToPlay()` to avoid first-call allocs.\n* **No dynamic allocation** in `processBlock`; pre-allocate all buffers.\n* **Avoid `std::sin/cos`** per sample/hop; use precomputed windows and tables.\n* **Flush-to-zero / denormals off** on the audio thread.\n* **Lock-free SPSC** for UI→audio mask columns; **never lock** in the audio thread.\n* **Bounds-check** ring reads (drop/duplicate most recent column if UI lags/leads).\n* **COLA correctness**: use sqrt-Hann with hop=N/4; verify unity gain with a 1 kHz tone test.\n\n---\n\n# 5) Decision Matrix (trade-offs)\n\n| Overlap      | Latency (report) | CPU      | Temporal      | Frequency            |\n| ------------ | ---------------- | -------- | ------------- | -------------------- |\n| 50% (2×)     | N/2              | 1.0×     | Good          | OK                   |\n| **75% (4×)** | **N/2**          | **2.0×** | **Excellent** | **Good** ✅           |\n| 87.5% (8×)   | N/2              | 4.0×     | Perfect       | Excellent (overkill) |\n\n> Latency reported is **N/2** regardless of overlap; overlap affects responsiveness (hop = N/overlap).\n\n---\n\n# 6) Specific to Your Implementation\n\n* **Fixed vs adaptive FFT size?**\n  **Adaptive**: 1024 for 44.1/48, 2048 for 88.2/96 to keep \\~45 Hz/bin constant.\n\n* **Apply psychoacoustic masking as limit or target?**\n  **Soft target** (downward compression) with **soft knee**, plus a cap on **extra cuts below threshold**.\n\n* **Phase handling strategy?**\n  **Preserve bin phases**; enable **identity phase-locking** near peaks to maintain transient coherence when edits are strong.\n\n* **Ring buffer vs double buffer for masks?**\n  **Both**: UI writes columns into **SPSC ring**; audio thread **double-buffers** `current/next` per hop.\n\n---\n\n# 7) Paint → Spectral Mapping Details\n\n* **Y mapping:** UI in **Bark**; map to bins via triangular Bark band weights; normalize energy (sum weights=1).\n* **Temporal quantization:** Quantize strokes to nearest **hop**; linearly **interpolate gains** across the two adjacent frames for mid-hop gestures.\n* **Decay:** **Exponential** per Bark band in dB with band-dependent releases (lows slower).\n\n---\n\n# 8) Latency & Sync\n\n* **Report:** **N/2** samples to DAW for plugin delay compensation.\n* **Internal sync:** The mask column index `t` affects the frame centered at `t*hop + N/2`.\n* **Lookahead:** Default **0**; optional **+1 hop** user toggle if your UX allows the added latency.\n\n---\n\n## Minimum Viable STFT (phase-coherent, real-time painting)\n\n1. **Adaptive N** (1024/2048), **hop=N/4**, **sqrt-Hann** analysis/synthesis.\n2. **Column-major frame buffers**; per-hop processing only.\n3. **Preserve phase**, with **optional identity phase-locking** around peaks.\n4. **Per-bin dB smoothing**, attack 3 ms / release 80 ms.\n5. **Soft-target masking** + **subtractive paint** (min in dB).\n6. **SPSC ring** for paint columns; **double-buffer** current/next in audio thread.\n7. **Report N/2** latency.\n\nIf you want, I can drop in a minimal C++ class skeleton with init/process showing the ring buffer + OLA wiring.\n"
+  },
+  {
+    "role": "user",
+    "content": "<user-prompt-submit-hook>[[ ultrathink ]]\n</user-prompt-submit-hook>"
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "The user is asking what format would be best for getting DSP expert input. They've given me a lot of detailed technical information from what appears to be a DSP expert's response.\n\nLooking at what they provided, it seems like they already got the DSP expert's input in a really good format - direct answers with rationales, code snippets, constants, warnings, and trade-off matrices. This is exactly the kind of format I was suggesting would be helpful.\n\nSince I'm in plan mode, I should not make any edits. The user seems to be sharing this information with me to help inform the plan for Phase 2-3 of the SpectralCanvasLite implementation.\n\nLet me acknowledge that this is excellent input and summarize how it answers our critical questions.",
+        "signature": "EpIHCkYIBxgCKkCEuow+2iYZElOPb/rKQapjgYEvcifIxbhBnoj4sk3PFcR2QmIoEa3DOXV3QZIpIreW4HKHuvRvEpjEmD7TJ7sJEgwcOiCMr5LOvCsG/VQaDP/hsiM3uBm2pkFNvyIw+XBIgmCP/Hn6yEtGEhbr8VuqDjrr64j/+mANQO/GORXvJahB9VOhmoXxS1qb55CFKvkFy+nOQiQzaGsUwuCivmdMAdQmX2Pfju3n1NkRMAboYqY7BvktczZI1OFHFDZX9zOuo2nmnSl0nw0hdDoasEo7CDB+4mlc/lxsj4Hy5YzF1v8tXNUKRDcT8C3Oqm35AkUod1Xi6pp1e5dRhnfKp57JK5vVrpgjQatdPyVgzE/lRohQQqbiYGVE6Lfo2wKttSmP1ZhX5CX2drrQh1ygKLl71T7if7jLfZvsG39Ore2WR58XJ8WU/4RwdFN6x9RZOqalRIqR0jys8DjjJ+XO0cuyly/FzEI3sgFe8zMl13ipYu5FUSAN2FkDX4b3NfUMOlsGk7GZGGt6r+BOzKKCbprLfdT2hqgEadPl7gfj8ruP9jBBrZqGNkPMNRMI6Wyqv/K5lTwfyol+7I60XNrh/hLPP51I+ZhTnkUlRP5KXlme2BB7iiJHfKEKJ3E+kRpsvfHWIibKmN/w0HAvzySX35MbC8Ydj6k9tWq+tNfdoXNpSjprY+Mv5UvgyNwREkp7UAEi8pKKHP0eAftxhbfhGD2rO1htNh/J9f3z29Rj5MD/I9QPVp9W94J1lsm4W0O/fCFjlOYIQAjfNyOMZpAoWjP9rgnMSdEfkDWciJVvVE3g8/7PTrbWenPGbk14epankntfqzDZOpSuTi7FRwhcfhMZjKLjkbTsx2E6gnPpCSoHfNby858C4YVisFjWQXIl2VqABNYE/peI2z/d1NgOpCipepVlt6+L4C0tdVq/0h67onapXp9lBtSQ9TJYXyzDVvsed8vuleY+Koewt1FailinlTTjjY46/5dNzxBan/tOSfET7KWHKPjbd8uE8349TXSzPhc6X3qk6ufF0+GNG2BGM53tRCk6bcHZhzn+lF6d0Wk1/gX+b81GyQM9IM0/S3TzwJkeka/6BWhGCzktHK8iF0K05U5WVlW7Z9HWtHrXIKime98y3FtVI2bwnaM6h6UKkBKDowz9XwMQpGRklPHrr+a1vPNHyVc2XQPgAXS9BmtyCsGckXKI4QUYAQ=="
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "Perfect! This DSP expert response is exactly what we needed. The format is ideal - direct answers with clear rationales and code snippets for the tricky parts. Let me summarize the key decisions for our implementation:\n\n## Critical Decisions Resolved\n\n### Core STFT Architecture\n- **Window**: sqrt-Hann pair (analysis/synthesis) for perfect COLA at 75% overlap\n- **FFT Size**: Adaptive - 1024 @ 44.1/48kHz, 2048 @ 88.2/96kHz (keeps ~45 Hz/bin)\n- **Overlap**: 75% (hop = N/4) for excellent temporal resolution\n- **Latency**: Report N/2 to DAW (centered STFT standard)\n\n### RT-Safe Processing\n- **Work pattern**: Process whole columns per hop (deterministic)\n- **Memory**: Column-major layout (time×bin) for cache-friendly mask application\n- **Communication**: SPSC ring buffer + double-buffering for current/next frames\n- **Bounded drain**: Process available columns at hop boundaries\n\n### Psychoacoustic Integration\n- **Application**: Post-FFT in spectral domain (matches our engine's output)\n- **Mode**: Soft-target compression with soft knee (not hard limiting)\n- **Paint model**: Subtractive (attenuation) primary, ≤6dB boost if needed\n- **Extra safety**: Cap maximum attenuation when already below threshold (-12dB max)\n\n### Smoothing & Phase\n- **Gain smoothing**: Per-bin one-pole in dB space (3ms attack, 80ms release)\n- **Phase**: Preserve exact phase + optional identity phase-locking for transients\n- **Y-axis**: Bark bands (24) matching psychoacoustic engine\n- **Decay**: Exponential in dB, Bark-dependent (lows 80-150ms, highs 30-70ms)\n\n## Key Implementation Notes\n\n### Critical RT-Safety Points\n1. Warm up FFT in `prepareToPlay()` - JUCE FFT allocates on first use!\n2. Pre-compute all windows/tables - no sin/cos in processBlock\n3. Column-major buffers for straight vector multiply\n4. SPSC for UI→audio, never lock audio thread\n\n### Minimum Viable Implementation\n```cpp\n// Phase 2 core loop structure:\n// Per hop in processBlock:\nfft.forward(windowedFrame, spectrum);\ncomputeMagnitudes(spectrum, mags);\npsychoEngine.computeThreshold(mags, thresholds);\ncomputeSoftTargetGains(mags, thresholds, maskGains);\nmergePaintAndMaskGains(paintGains, maskGains, targetGains); // min in dB\nsmoothGainsInDB(targetGains, smoothedGains);\napplySpectralMask(spectrum, smoothedGains);\nfft.inverse(spectrum, timeBuffer);\noverlapAdd(timeBuffer, synthWindow, hopSize);\n```\n\nThis gives us a clear, proven architecture for Phase 2-3. The expert's emphasis on subtractive painting and soft-target compression aligns perfectly with our psychoacoustic engine's design philosophy."
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_01MVk4ZuYxmNJ9zQiYbSDxNQ",
+        "name": "TodoWrite",
+        "input": {
+          "todos": [
+            {
+              "content": "Create h-implement-spectral-canvas-foundation task directory",
+              "status": "completed",
+              "activeForm": "Creating h-implement-spectral-canvas-foundation task directory"
+            },
+            {
+              "content": "Write docs/ROADMAP.md with phases and gates",
+              "status": "completed",
+              "activeForm": "Writing docs/ROADMAP.md with phases and gates"
+            },
+            {
+              "content": "Fix Source directory organization",
+              "status": "completed",
+              "activeForm": "Fixing Source directory organization"
+            },
+            {
+              "content": "Update CMakeLists.txt with explicit file lists",
+              "status": "completed",
+              "activeForm": "Updating CMakeLists.txt with explicit file lists"
+            },
+            {
+              "content": "Implement Phase 1: SPSC queue and infrastructure",
+              "status": "in_progress",
+              "activeForm": "Implementing Phase 1: SPSC queue and infrastructure"
+            },
+            {
+              "content": "Add ghost code prevention tools",
+              "status": "pending",
+              "activeForm": "Adding ghost code prevention tools"
+            },
+            {
+              "content": "Build and validate with pluginval",
+              "status": "pending",
+              "activeForm": "Building and validating with pluginval"
+            },
+            {
+              "content": "Document DSP architecture decisions",
+              "status": "pending",
+              "activeForm": "Documenting DSP architecture decisions"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "tool_use_id": "toolu_01MVk4ZuYxmNJ9zQiYbSDxNQ",
+        "type": "tool_result",
+        "content": "Todos have been modified successfully. Ensure that you continue to use the todo list to track your progress. Please proceed with the current tasks if applicable"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "Now I have all the DSP expert input integrated. The user has provided comprehensive technical guidance for the STFT implementation. I should create a plan that incorporates this expert knowledge into our Phase 1-2 implementation strategy.\n\nLet me create a comprehensive plan that includes:\n1. Completing Phase 1 infrastructure with the expert's recommendations in mind\n2. Planning Phase 2 with the specific STFT parameters and algorithms provided\n3. Documentation of the DSP decisions\n\nSince we're in plan mode, I need to present this as a comprehensive plan using ExitPlanMode.",
+        "signature": "EuwFCkYIBxgCKkANnM0yTRjQM1Dd7zZemSvmudCZvexzSNJpU9AZdyCkgcHUk4uxXPWrhX0iYZ+qc+1wGJYfA0bYUIuLgM7b7PfQEgxMjU/NcTKM/7JHDtkaDNOtxhuj3bxz1x/rCyIwHnueuvuRzl2hPiqTxr9WjUkvhVb1jAqxW6C4M3F9AbnH6m5F4il14VEkGIIIELP2KtMEK5XNzkBh74aW+smn8U8Xd052va5vUeFylYNqimm7P6AGjpkXJXP61U6OlRxtb+0ppfNxwHaS/pnb2tlE1jeL/FXgxGLGul9nuUH4Bj9wyxxk8SeZQJHCQkWhYeUngRrOyMHM+GlyRsTqyT6noUR5JUr6zC4NF3cgxuoAf2+ySEO+P7/sC+EKUx1YVvD16qbNEXsxsWfjS4iJ5eph63g3Ep+h7x/BD1HLo+MuYZlgYcQ6B3vQgmeiV8fa85l/aUNAA48w835AaPTQPUjLb47xDH18w2MZROE7NVdoRbqp3cjuK6q0y3bE1xCQY+5w47kLG7DEB6cJd9k9EAsPLRWS/KnFRzrTX75UIar/T8xCsPyq51Qc+j/wt7F9qTCTJxKyJYeRYGTkfeest0gZolGKBGjZfRclfhHwa7m0BDfGrXFAC+OfGbkL6psP9r1YWZ18IPIWKukU2xP68tMuVfW6nvpnXrhD5LXWTUoJEh1uwuswNGTU18yuBX6Rr5UF7U1/5269mL/vcSLwc4WVO99EebQI/fzSdctm9/AWwEeRsaska56kr7Av7jJ/mXcI1YDyUJLjEMHyBM6mPJ5swnufBjxVTjdKqJAnT2wZzX2cNSRSEq07IAoZP9dTueQkXMgMKEniNFDdbp4cVqG3kgYSFmJ9Zuw/lVg07aBSeBGf8oePPBZibSBthD/WsEsoZm54jfzKh3tfONmx68DP2YjIuG8OrI3x4YwWuuXw472xAKxyjiVDyIvPl62kr4I6K0MFWPbqr053I95F2H/Us2Gn/6d45RgB"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_0166j1aac2F8zMfenvgYkwti",
+        "name": "ExitPlanMode",
+        "input": {
+          "plan": "# Complete Phase 1 & Phase 2 Implementation Plan\n\n## Phase 1 Completion (Infrastructure)\nBased on the DSP expert guidance, we need to adjust our infrastructure:\n\n### 1. Update MaskColumn.h \n**Already created, but needs adjustment for adaptive FFT size:**\n- Change fixed kNumBins to support 257 (1024 FFT) or 513 (2048 FFT)\n- Keep trivially copyable for RT-safety\n\n### 2. Create SpscQueueLite.h\n**Lock-free queue implementation (as provided by expert):**\n- Template-based with fixed capacity (1024 default)\n- Cache-line aligned atomics (64-byte boundaries)\n- tryPush/tryPop with bounded operations\n- Static assertions for trivially copyable types\n\n### 3. Create Snapshot.h \n**RT-safe telemetry structure:**\n- Atomic counters with relaxed memory ordering\n- processedBlocks, queueDepth, drainsThisBlock, rejectedPushes\n- Add hopCount and fftSize for Phase 2 tracking\n\n### 4. Update Processor & Editor\n**Wire the infrastructure:**\n- Add SPSC queue to processor\n- Implement bounded drain (≤16 per block)\n- Convert mouse events to MaskColumn in editor\n- Display telemetry counters in HUD overlay\n\n### 5. Add Ghost Code Prevention\n**Create tools/check_orphans.py:**\n- Python script to detect unlisted files\n- Pre-commit hook in .githooks/\n- Update CMakeLists.txt with all new files\n\n### 6. Update CMakeLists.txt\n**Add all new sources explicitly:**\n- Source/Core/SpectralCanvasProProcessor.cpp (.h)\n- Source/Core/MaskColumn.h\n- Source/Core/Snapshot.h  \n- Source/UI/SpectralCanvasProEditor.cpp (.h)\n- Source/Utils/SpscQueueLite.h\n\n## Phase 2 Planning (STFT Implementation)\n\n### 1. Create DSP Architecture Document\n**docs/DSP_ARCHITECTURE.md documenting all decisions:**\n- sqrt-Hann window pair for 75% overlap COLA\n- Adaptive FFT sizing (1024/2048)\n- Soft-target compression with psychoacoustic masking\n- Phase preservation strategy\n- RT-safety constraints\n\n### 2. Create STFTProcessor Class\n**Source/DSP/STFTProcessor.h/.cpp with:**\n```cpp\nconstexpr int FFT_SIZE_44K_48K = 1024;\nconstexpr int FFT_SIZE_88K_96K = 2048;\nconstexpr int OVERLAP_FACTOR = 4; // 75% overlap\n```\n- Pre-computed sqrt-Hann windows\n- Column-major frame buffers\n- OLA synthesis with proper COLA\n- Warm FFT in prepareToPlay()\n\n### 3. Create Gain Processing Pipeline\n**Source/DSP/GainProcessor.h/.cpp:**\n- Per-bin one-pole smoothing in dB space\n- Soft-knee compression around threshold\n- Bark-band dependent decay rates\n- Paint/mask gain merging (min in dB)\n\n### 4. Wire Psychoacoustic Engine\n**Integration in processBlock:**\n- computeThreshold() per hop\n- Soft-target gain computation\n- Optional phase locking for transients\n\n### 5. Update Processor for STFT\n**Modify SpectralCanvasProProcessor:**\n- Add STFTProcessor member\n- Process at hop boundaries (not per-sample)\n- Double-buffer current/next mask columns\n- Report N/2 latency to DAW\n\n## Build & Validation Steps\n\n### Phase 1 Validation\n1. Build with zero warnings (-Werror enabled)\n2. Run check_orphans.py successfully\n3. Test paint events flow UI→queue→audio\n4. Verify telemetry counters update\n5. Check RT-safety (no allocations)\n\n### Phase 2 Validation  \n1. COLA test: unity gain with 1kHz tone\n2. Phase coherence test: impulse response\n3. CPU usage <15% @ 48kHz/64 samples\n4. pluginval level 8+ passes\n5. DAW latency compensation correct\n\n## Files to Create/Modify\n\n### New Files (Phase 1)\n- Source/Utils/SpscQueueLite.h ✓\n- Source/Core/Snapshot.h ✓\n- Source/Core/SpectralCanvasProProcessor.h/cpp\n- Source/UI/SpectralCanvasProEditor.h/cpp\n- tools/check_orphans.py\n- .githooks/pre-commit\n\n### New Files (Phase 2)\n- docs/DSP_ARCHITECTURE.md\n- Source/DSP/STFTProcessor.h/cpp\n- Source/DSP/GainProcessor.h/cpp\n- Source/DSP/WindowFunctions.h\n\n### Modified Files\n- CMakeLists.txt (add all sources explicitly)\n- Source/Core/MaskColumn.h (adjust for adaptive size)\n\n## Success Criteria\n✅ Phase 1: Clean infrastructure with RT-safe communication\n✅ Phase 2: Working STFT with psychoacoustic masking\n✅ Zero compiler warnings, zero orphan files\n✅ pluginval level 8+ passes\n✅ Proper latency reporting (N/2)\n✅ Subtractive painting model working\n✅ CPU usage within targets"
+        }
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "tool_result",
+        "content": "User has approved your plan. You can now start coding. Start with updating your todo list if applicable",
+        "tool_use_id": "toolu_0166j1aac2F8zMfenvgYkwti"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "The user is asking if the UI implementation comes along with the core DSP implementations I've planned. They want to know if the UI components are included or separate.\n\nLooking at my plan, I have included UI components:\n- Source/UI/SpectralCanvasProEditor.h/cpp\n- Telemetry HUD overlay\n- Mouse event to MaskColumn conversion\n\nBut I should clarify what's included in each phase and what the UI will look like at each stage.",
+        "signature": "EtEECkYIBxgCKkA7wziWy19NWxKC1GByw6x27l37wYTAEhPoIMnv43X0TFV8NWc1nF4Tc3UcfxVRNSmLv2B18tZa0cxfBy/YLy2fEgwiChKXL2qs38BgxG4aDH2etTvtUYte38ZboCIw7YfdsgcWlvtJ6UzI5+1G+1626hVvuiAeo7U7Do/PLKMzkKvXCvp+9M0CjTYIFH+xKrgDP0AuQTTOYPDlGYO+S2fbE1gt5uCLRje9XyiNE9iIvXG7qRhxtxqI40mKLn460/9PCBaxHWY2ZcUgD8q1S4v/0vRRXBaakCirQrXUdfMj7+KOtGIi6mFaoI41ftr8riqybIP7BRFymPeecge4ijw/kFE+mGFYdun1VGCgSe8oM8fR/BCYSvEpEo5wrZxlePMJOg199PxF1rhYAR1NIePauaOMF4EXOu1RlLjXyk2lmNJtCMZJyQ0rHG3uqwLMnrqq9N+kokl1tcny6huoclttaYJGpMlJhRcKS4dd9ewWa/vkKU3HhzD3PdOx84u/2n2noa0dlE6oFZI3ieKFdS94m/jr2m7GyIQfgkam9GRDM0brEBNZzXREPLHkW/hrWkkDO4hOD2b2LcEDcslt6spZP1Yli6NFDIF47zsXLgcvwvDWbbdpoHyOCCT8gRxHdg9C1mxH6nggCV5l+KbVkIX+MeAInosfwGEFRr4aZxDerjgK4+qm2g9Im3MEAv7ZmhAuLhyxV8X7jMOk/qJAAbI6OB9OGb+DwrnQGRYrYHy2uCNB3tlvKcqJgH+HPg3ppzdI6BKHRM+vxH8YAQ=="
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "Yes, the UI is included in the implementations, but it evolves in stages:\n\n## Phase 1 UI (Infrastructure)\n**Basic functional UI:**\n- Simple paint area (400x300 window)\n- Mouse drag creates MaskColumn events → SPSC queue\n- Live telemetry overlay showing:\n  - Processed blocks count\n  - Queue depth\n  - Drains per block\n  - Rejected pushes\n- Audio ducking on paint (current behavior)\n\n## Phase 2 UI (Spectral Processing)\n**Enhanced UI with spectral feedback:**\n- Paint area maps to Bark frequency bands (Y-axis)\n- Time axis shows current spectral processing position\n- Visual feedback when spectral masking is active\n- Optional gain reduction meter per Bark band\n- Same telemetry plus STFT metrics (FFT size, hop rate)\n\n## What's NOT Included (Future Phases)\n- Full spectrogram visualization\n- GPU-accelerated canvas rendering\n- Advanced paint brushes/tools\n- Real-time spectrum analyzer display\n- Complex UI layouts\n\n## UI Code Provided\nThe plan includes complete UI implementation files:\n```\nSource/UI/SpectralCanvasProEditor.h/cpp\n- mouseDown/mouseDrag event handlers\n- Paint method with telemetry display  \n- Timer callback for 30fps updates\n- MaskColumn event generation\n```\n\nSo yes, you get a working UI that demonstrates the core functionality at each phase. The UI starts simple but becomes more sophisticated as we add spectral processing capabilities."
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_01Xfki2TRNx1Vi1hg4n9oXra",
+        "name": "TodoWrite",
+        "input": {
+          "todos": [
+            {
+              "content": "Create h-implement-spectral-canvas-foundation task directory",
+              "status": "completed",
+              "activeForm": "Creating h-implement-spectral-canvas-foundation task directory"
+            },
+            {
+              "content": "Write docs/ROADMAP.md with phases and gates",
+              "status": "completed",
+              "activeForm": "Writing docs/ROADMAP.md with phases and gates"
+            },
+            {
+              "content": "Fix Source directory organization",
+              "status": "completed",
+              "activeForm": "Fixing Source directory organization"
+            },
+            {
+              "content": "Update CMakeLists.txt with explicit file lists",
+              "status": "completed",
+              "activeForm": "Updating CMakeLists.txt with explicit file lists"
+            },
+            {
+              "content": "Create SpscQueueLite.h implementation",
+              "status": "in_progress",
+              "activeForm": "Creating SpscQueueLite.h implementation"
+            },
+            {
+              "content": "Create Snapshot.h for telemetry",
+              "status": "pending",
+              "activeForm": "Creating Snapshot.h for telemetry"
+            },
+            {
+              "content": "Update processor with SPSC queue integration",
+              "status": "pending",
+              "activeForm": "Updating processor with SPSC queue integration"
+            },
+            {
+              "content": "Create UI editor with paint events",
+              "status": "pending",
+              "activeForm": "Creating UI editor with paint events"
+            },
+            {
+              "content": "Add ghost code prevention tools",
+              "status": "pending",
+              "activeForm": "Adding ghost code prevention tools"
+            },
+            {
+              "content": "Build and validate Phase 1",
+              "status": "pending",
+              "activeForm": "Building and validating Phase 1"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "tool_use_id": "toolu_01Xfki2TRNx1Vi1hg4n9oXra",
+        "type": "tool_result",
+        "content": "Todos have been modified successfully. Ensure that you continue to use the todo list to track your progress. Please proceed with the current tasks if applicable"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "The user has approved the plan and I need to continue with the implementation. I'm currently working on creating the SpscQueueLite.h implementation. Let me create this file based on the DSP expert's specifications.",
+        "signature": "EoEDCkYIBxgCKkC1I5MkMFfpLeoPrLEsqPBVehK8iJdvlt+sAEplhe9HkqE36LeqQ3r33CfeYHvS13vEbYjSazLlF1xSfsaOr0JeEgxGTrWBaVlPZcpbTkAaDEk4cvTymh8a+Q27UyIwSo9vGnOSlpwWkQ0ed3bcdNXL0P6WhAJUM5iM5oIuR8nzqj3XspJzVf6QWTpRBRzVKugBcfbrtuyS0cXxc5Do29Z5tuzblp5Gml65m5yDCl2GvrHiC8+eKOn6oSwOjVHACC3a6mpioskL9Dw6ky0K4JOcbhaJ8FMs2ECkIx6thEtQ6gwzi5yflU0hYBaF6YM52g5owphxIMI4qaKCpSnpzqGFyzC4c6xW4SnlFxJUYe/m4P19cL3Qd/jE6SzCyrwextNmhRt30O2fvd+Kq1PL7qViFyf16RAonJ5H+DfHxMIKVdSoJ/dKidqfiI04XZ00GtjY4Z4cz6qwb4LZf8gf/cLV/rw4PUVEpkefJGxD7NfGNq4WqiLSc+MHphgB"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_015ihTvwXtuE78VvSNqL2LMy",
+        "name": "Write",
+        "input": {
+          "file_path": "Source/Utils/SpscQueueLite.h",
+          "content": "#pragma once\n\n#include <atomic>\n#include <cstddef>\n#include <type_traits>\n\nnamespace SpectralCanvas {\n\n/**\n * SpscQueueLite - Lock-free single-producer, single-consumer queue\n * \n * Designed for RT-safe communication between UI thread (producer) and \n * audio thread (consumer). Uses cache-line aligned atomics to prevent\n * false sharing and minimize contention.\n * \n * Based on DSP expert recommendations for bounded RT-safe operations.\n * \n * @tparam T Item type (must be trivially copyable)\n * @tparam Capacity Fixed queue capacity (power of 2 recommended)\n */\ntemplate<typename T, size_t Capacity>\nclass SpscQueueLite\n{\npublic:\n    static_assert(std::is_trivially_copyable_v<T>, \n                  \"Type T must be trivially copyable for RT-safety\");\n    static_assert(Capacity > 0, \"Capacity must be greater than zero\");\n    static_assert((Capacity & (Capacity - 1)) == 0, \n                  \"Capacity should be power of 2 for optimal performance\");\n\n    SpscQueueLite() = default;\n    ~SpscQueueLite() = default;\n    \n    // Non-copyable, non-movable for RT-safety\n    SpscQueueLite(const SpscQueueLite&) = delete;\n    SpscQueueLite& operator=(const SpscQueueLite&) = delete;\n    SpscQueueLite(SpscQueueLite&&) = delete;\n    SpscQueueLite& operator=(SpscQueueLite&&) = delete;\n\n    /**\n     * Pushes an item to the queue (UI thread - producer)\n     * \n     * @param item Item to push\n     * @return true if successful, false if queue is full\n     * \n     * This is non-blocking and RT-safe for the producer thread.\n     * If the queue is full, the item is rejected (no blocking).\n     */\n    bool tryPush(const T& item) noexcept\n    {\n        const auto currentWritePos = writeIndex.load(std::memory_order_relaxed);\n        const auto nextWritePos = increment(currentWritePos);\n        \n        // Check if queue would be full after this write\n        if (nextWritePos == readIndex.load(std::memory_order_acquire))\n        {\n            return false; // Queue is full - reject the push\n        }\n        \n        // Write the item to the buffer\n        buffer[currentWritePos] = item;\n        \n        // Publish the write with release semantics\n        writeIndex.store(nextWritePos, std::memory_order_release);\n        return true;\n    }\n\n    /**\n     * Pops an item from the queue (audio thread - consumer)\n     * \n     * @param item Reference to receive the popped item\n     * @return true if successful, false if queue is empty\n     * \n     * This is non-blocking and RT-safe for the consumer thread.\n     * Bounded operation suitable for audio thread processing.\n     */\n    bool tryPop(T& item) noexcept\n    {\n        const auto currentReadPos = readIndex.load(std::memory_order_relaxed);\n        \n        // Check if queue is empty\n        if (currentReadPos == writeIndex.load(std::memory_order_acquire))\n        {\n            return false; // Queue is empty\n        }\n        \n        // Read the item from the buffer\n        item = buffer[currentReadPos];\n        \n        // Advance the read position with release semantics\n        readIndex.store(increment(currentReadPos), std::memory_order_release);\n        return true;\n    }\n\n    /**\n     * Returns approximate queue size (number of items)\n     * \n     * Note: This is approximate due to concurrent access.\n     * Should only be used for telemetry/debugging, not control flow.\n     */\n    size_t size() const noexcept\n    {\n        const auto readPos = readIndex.load(std::memory_order_acquire);\n        const auto writePos = writeIndex.load(std::memory_order_acquire);\n        \n        if (writePos >= readPos)\n            return writePos - readPos;\n        \n        return Capacity - readPos + writePos;\n    }\n\n    /**\n     * Returns maximum capacity of the queue\n     */\n    constexpr size_t capacity() const noexcept\n    {\n        return Capacity - 1; // One slot is always reserved to distinguish full/empty\n    }\n\n    /**\n     * Checks if queue is approximately empty\n     */\n    bool empty() const noexcept\n    {\n        return readIndex.load(std::memory_order_acquire) == \n               writeIndex.load(std::memory_order_acquire);\n    }\n\nprivate:\n    // Fixed-size buffer for queue items\n    T buffer[Capacity];\n    \n    // Cache-line aligned atomics to prevent false sharing\n    // 64-byte alignment ensures each atomic gets its own cache line\n    alignas(64) std::atomic<size_t> readIndex{0};\n    alignas(64) std::atomic<size_t> writeIndex{0};\n    \n    /**\n     * Increment index with wrap-around\n     * Using power-of-2 capacity allows efficient modulo via bitwise AND\n     */\n    constexpr size_t increment(size_t index) const noexcept\n    {\n        return (index + 1) % Capacity;\n    }\n};\n\n} // namespace SpectralCanvas"
+        }
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "tool_use_id": "toolu_015ihTvwXtuE78VvSNqL2LMy",
+        "type": "tool_result",
+        "content": "File created successfully at: Source/Utils/SpscQueueLite.h"
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": "Write operation feedback:\n- [python \"%CLAUDE_PROJECT_DIR%\\.claude\\hooks\\post-tool-use.py\"]: [DAIC Reminder] When you're done implementing, run: daic\r\n"
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "The user said \"cool!\" which seems to be positive feedback on the SpscQueueLite.h implementation I just created. I should continue with the next task in my todo list, which is \"Create Snapshot.h for telemetry\".\n\nLooking at my todo list:\n1. ✅ Create h-implement-spectral-canvas-foundation task directory - completed\n2. ✅ Write docs/ROADMAP.md with phases and gates - completed  \n3. ✅ Fix Source directory organization - completed\n4. ✅ Update CMakeLists.txt with explicit file lists - completed\n5. ✅ Create SpscQueueLite.h implementation - just completed, should mark as completed\n6. 🔄 Create Snapshot.h for telemetry - next task\n7. ⏳ Update processor with SPSC queue integration - pending\n8. ⏳ Create UI editor with paint events - pending\n9. ⏳ Add ghost code prevention tools - pending\n10. ⏳ Build and validate Phase 1 - pending\n\nI should mark the current task as completed and move to the next one.",
+        "signature": "EsAICkYIBxgCKkClL87HpZeAWp/65cB1K38NoLGDAeg8EuYBP8QVkqvLnAv99cBWFwErXp7PisFbpHHjj92flMIyHBQzmqT8Lf22EgzTkODM4lXa4JQ2XHkaDPegxW7fyIzrigtYbCIwpWyU56LqWi05dFiSj2hVlO9wSxVpSL3qFvc6igskYqO251cHAEKBKiRP715cZYOPKqcH002CQi+DzUCaQMJGePTe+V65cR5fCVPzb4M476jLcqYD6bGzNCDRE/MrTHHuIB2rX8EhB3MGxzibaE0keQn+tHUzCRsLdJfDwsIz2NJSEhkorF5xVoeJWmcoaHb4YwP2AVciX1IkAhPm3elTTWqPhkDjYJQT1cEmvM9R7lZ/nhzb1Hh2qi9s50yDlZ3FuFxetaRNCtCPV4ynlZ3Z7uHi/1kV5LhXUJYxQjHyuZOO0QykRnJbtMavKQsUPqgBsiIcFMlsZpcEo7sze3KFAsi8PrBoCsA65Gm1kOKZiE9FxnZzaP+iyc0jE+1CryKTW4ljEvSPTQ+CWSX9y82h9IHcBKjAluOiuerA2eXqtEB9KrdzmydIbGqH1HE7UsKVhYt/iDFD5G+NdHwy28MgSTG/U/RKSbP+JPDgZ1PG5GFZhQff1Zdl7eZ5Ia8oKDtS5KzKNnALLoytIlLfLOxPqC8uMTnk9bnv++7/emnT04HJB2P+Y0EYjrFkwXqLaZK5ZWvjAyKIVKBmPh7V+sLuaKAChA+5D4pk/8af81lqLa6s3X+omTWZnY4/wph0d/F3ZgXpwaxq+9gqfBGYTV140BQ0nbidbamjsSRSR7BcZZjAdgRwxKmseZQwLzXml5Nd9ArErmlXoO0lHqt3RV4Rsc0pcumdikfXSNYzYZM+qFnjE1PpqDzAJuFkIv4cL0yBzGW8cnSLvNaJKBq2GgDifspMVZQ2Fhn4g5hEnxrnGLn9tjLXINYSJLv19H5qFBL55/+6paA5uNhIL5TLlMxS7kjAUshM7/u0J2xhOdHCT8ju/ryIilCFAPAcAC0MZnH/pNN8Erkf3FWwfe/pUAVMNalN0+G36RBc7KTBIshmSPE+muy8AIuhhSdAEdBzcJTKfuWUhjTHs4o/F5aCr/c/F+5WiKKuWzKloilyM9LbaS4JP0GhdnkVc/AUZhZjeom9T7PK4Lhv0GSzFrNqrfbpWVRJ+1a/vUBRRjN7XqMntjmIpLXfULVyjQmlCNJNUbBd/GFVhwL3VMSzF0eYncZ+iX0uA+13lRkQcCUKUFI//cvMN3L2wvM3/uEy4QgKXcxWBoKfOGpuZhcfvhWGJ2LkZVNaIky3OHaI3Augu11Rr+np+Ka3ZFPiIlJNdJ4Nc6YfZbAyyulHBtigyu1uwX2Pe7Rl4weszfG5d1V+Ej4Z+caxGTXTq+jjuXXua6PYns07cX5ZO4ReDRCM7c3G+SBAVXDZPabUskfS5NQYAQ=="
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_01MPTRqAxwG7ezFEV7iz1wh2",
+        "name": "TodoWrite",
+        "input": {
+          "todos": [
+            {
+              "content": "Create h-implement-spectral-canvas-foundation task directory",
+              "status": "completed",
+              "activeForm": "Creating h-implement-spectral-canvas-foundation task directory"
+            },
+            {
+              "content": "Write docs/ROADMAP.md with phases and gates",
+              "status": "completed",
+              "activeForm": "Writing docs/ROADMAP.md with phases and gates"
+            },
+            {
+              "content": "Fix Source directory organization",
+              "status": "completed",
+              "activeForm": "Fixing Source directory organization"
+            },
+            {
+              "content": "Update CMakeLists.txt with explicit file lists",
+              "status": "completed",
+              "activeForm": "Updating CMakeLists.txt with explicit file lists"
+            },
+            {
+              "content": "Create SpscQueueLite.h implementation",
+              "status": "completed",
+              "activeForm": "Creating SpscQueueLite.h implementation"
+            },
+            {
+              "content": "Create Snapshot.h for telemetry",
+              "status": "in_progress",
+              "activeForm": "Creating Snapshot.h for telemetry"
+            },
+            {
+              "content": "Update processor with SPSC queue integration",
+              "status": "pending",
+              "activeForm": "Updating processor with SPSC queue integration"
+            },
+            {
+              "content": "Create UI editor with paint events",
+              "status": "pending",
+              "activeForm": "Creating UI editor with paint events"
+            },
+            {
+              "content": "Add ghost code prevention tools",
+              "status": "pending",
+              "activeForm": "Adding ghost code prevention tools"
+            },
+            {
+              "content": "Build and validate Phase 1",
+              "status": "pending",
+              "activeForm": "Building and validating Phase 1"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "tool_use_id": "toolu_01MPTRqAxwG7ezFEV7iz1wh2",
+        "type": "tool_result",
+        "content": "Todos have been modified successfully. Ensure that you continue to use the todo list to track your progress. Please proceed with the current tasks if applicable"
+      }
+    ]
+  }
+]

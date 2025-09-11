@@ -1,0 +1,6 @@
+{
+  "task": "h-implement-spectral-processing",
+  "branch": "feature/implement-spectral-processing",
+  "services": ["Core", "UI", "DSP", "Utils"],
+  "updated": "2025-09-11"
+}

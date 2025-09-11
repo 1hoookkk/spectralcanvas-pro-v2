@@ -1,0 +1,491 @@
+[
+  {
+    "role": "user",
+    "content": "Love where you’ve landed. Short version: keep **SpectralCanvasLite** as the buildable product base, mine the **Research Vault** deliberately, and codify the plan + guardrails so you (and Cursor) can work in parallel without re-introducing bloat. &#x20;\n\nHere’s a crisp set of next moves you can act on right now:\n\n1. Lock the base & write it down\n\n* Treat **Lite** as the authoritative starting point (minimal JUCE plugin with click-to-duck; fast iteration). Add `docs/ROADMAP.md` mirroring your phases + gates (pluginval ≥8/10, RT-safe, bounded work).  &#x20;\n\n2. Create a single “implementation” task (directory task)\n\n* Name: `h-implement-spectral-canvas-foundation` with subtasks for Phase 1–5 you outlined (Core/DSP/UI/Utils layout → SPSC queue + MaskColumn + Snapshot → SpectralEngineStub behind a flag → integrations/tests). This matches the repo’s intent to grow from a clean base and selectively mine Pro. &#x20;\n\n3. Parallelize: Cursor catalogs; you build\n\n* **Cursor**: catalog the 4k research files into a **Research\\_Vault** tree (AI, Psychoacoustics, GPU, Synthesis, UI, Telemetry) with per-folder `README.md` (key classes, deps, porting notes).\n* **You**: Phase 1 in Lite: create `/Source/{Core,DSP,UI,Utils}`; move current files; add SPSC queue + `MaskColumn` + minimal `Snapshot` for HUD; set compile flags and gates. The Context Bridge explicitly endorses this sequencing.&#x20;\n\n4. Wire validation early\n\n* Add `pluginval` to your local checklist, keep **strictness 8–10**, and ensure **no allocs/locks in `processBlock`** stays true as you add queues/snapshots. The docs already call these out as success checks.&#x20;\n\n5. Keep docs discoverable\n\n* Update `docs/Documentation Index` to link the new `ROADMAP.md`, and record each mined module (SPSC, MaskColumn, Snapshot) as you land them.&#x20;\n\n---\n\n# Paste this into Claude/ Cursor as your **next prompt block**\n\n(One block; instructions only; Claude/ Cursor will do the work.)\n\nCLAUDE CODE – IMPLEMENTATION TASK & ROADMAP\n\nObjective\nCreate a high-priority DIRECTORY task that organizes SpectralCanvasLite for incremental mining from the Research Vault. Add a ROADMAP with gates. Land Phase 1 (layout + infra) without re-introducing bloat.\n\nAuthoritative context\n\n* Lite is the minimal, buildable product base (click-to-duck; no allocs/locks in `processBlock`). Keep it fast and clean.\n* Pro/“Research Vault” holds ≈4000 files of high-value IP to be mined gradually (SPSC, MaskColumn, psychoacoustics, GPU, AI, etc.).\n* Use compile flags and per-feature gates; require pluginval ≥8/10; RT-safety and bounded per-block work.\n\nTasks\n\n1. Create task scaffolding\n\n* Path: sessions/tasks/h-implement-spectral-canvas-foundation/README.md (DIRECTORY task)\n* Frontmatter: {type: directory, priority: high, branch: feature/implement-spectral-canvas-foundation}\n* Include scope, risks, gates, and the phased plan below.\n\n2. Add docs/ROADMAP.md (product-facing)\n\n* Sections:\n\n  * Vision (Lite as core; mine Research Vault incrementally)\n  * Gates (pluginval ≥8, DAW smoke, RT-safe/no allocs/locks, bounded drain ≤16, feature flags)\n  * Phases:\n\n    * Phase 1: Clean architecture + infra\n\n      * Create `Source/Core`, `Source/DSP`, `Source/UI`, `Source/Utils`\n      * Move current files accordingly\n      * Add `Utils/SpscQueueLite.{h,cpp}`\n      * Add `Core/MaskColumn.{h,cpp}` (minimal column representation)\n      * Add `Core/Snapshot.{h}` (counters: processedBlocks, queueDepth, drainsThisBlock)\n      * Expose `publishSnapshot()` hook from processor; print to HUD (text)\n    * Phase 2: Event transport\n\n      * Bounded drain ≤16; map paint→mask columns; no DSP changes yet\n    * Phase 3: Audible path\n\n      * `DSP/SpectralEngineStub.{h,cpp}` behind `SC_ENABLE_STUB`\n      * Apply mask-derived gain shaping (simple, RT-safe)\n    * Phase 4: Differentiators (flags)\n\n      * PsychoacousticMaskingEngine (flag), SpectralSynthEngine (flag), Z-Plane masking (flag)\n    * Phase 5: Test & validation\n\n      * pluginval 8–10; DAW smoke; RT invariants; perf notes\n* “Mining playbook”:\n\n  * Identify minimal class\n  * Port into isolated namespace/module\n  * Add compile flag\n  * Unit smoke + pluginval before default-on\n\n3. Repo layout & CMake\n\n* Create directories: `Source/Core`, `Source/DSP`, `Source/UI`, `Source/Utils`\n* Move existing files into appropriate folders; update `CMakeLists.txt` to glob/explicit-list new paths (keep explicit lists for discipline).\n* Add options:\n\n  * `option(SC_ENABLE_STUB \"Enable SpectralEngineStub path\" OFF)`\n  * `option(SC_ENABLE_PSYCHO \"Enable Psychoacoustic engine\" OFF)`\n\n4. Implement Phase 1 code\n\n* `Utils/SpscQueueLite`: single-producer single-consumer, lock-free, trivially copyable item; fixed capacity template; RT-safe.\n* `Core/MaskColumn`: struct with column index, intensity, timestamp; trivially copyable.\n* `Core/Snapshot`: struct with per-block counters (processedBlocks, queueDepth, drainsThisBlock); cheap to copy.\n* Processor:\n\n  * Add member: `SpscQueueLite<MaskColumn, 1024> maskQueue_;`\n  * On paint (UI): enqueue `MaskColumn` with bounded offer (drop oldest if full; count rejects).\n  * In `processBlock`: bounded drain ≤16; update counters; call `publishSnapshot(snapshot)`.\n* Editor/HUD: minimal text overlay with counters (no allocations in audio thread; use atomics/lock-free queues).\n\n5. Documentation index update\n\n* Append links in `docs/Documentation Index` to `ROADMAP.md` and “Mined Modules” section; add a stub “Mined Modules” page.\n\n6. Parallel work for Cursor (separate task, not blocking Phase 1)\n\n* Create `Research_Vault/` outside the build graph with subfolders:\n\n  * `AI_Systems`, `Psychoacoustics`, `GPU_Acceleration`, `Synthesis_Engines`, `UI_Frameworks`, `Telemetry`\n* For each: generate `README.md` with key classes, known deps, suggested isolation steps, and candidate features to port first.\n* Do NOT add to CMake; this is cataloging only.\n\nAcceptance criteria (Phase 1)\n\n* Builds fast; folder structure in place; compiler options added.\n* Bounded queue + snapshot plumbing works; HUD shows counters ticking in DAW.\n* `processBlock` remains RT-safe (no allocs/locks/I/O); pluginval passes at ≥8.\n* No research code linked yet; zero bloat reintroduced.\n\nDeliverables\n\n* `sessions/tasks/h-implement-spectral-canvas-foundation/README.md`\n* `docs/ROADMAP.md`\n* New `Source/*` subdirs, updated `CMakeLists.txt`\n* `Utils/SpscQueueLite`, `Core/MaskColumn`, `Core/Snapshot`\n* Minimal HUD overlay\n\nPost-merge plan\n\n* Phase 2 PR: wire paint→columns mapping and drain stats (still silent).\n* Phase 3 PR: add `SpectralEngineStub` behind flag; audible masks.\n* Begin selecting psychoacoustic module to mine next (flagged).\n\nEnd block.\n\n---\n\nIf you want, I can also drop a tiny commit message skeleton for your first PR:\n\n```\nchore: scaffold lite foundation\n\nSets clean Source/ subdirs, adds SPSC queue, MaskColumn, and Snapshot scaffolding. Wires bounded drain + per-block snapshot publishing and minimal HUD overlay. Updates CMake and docs with ROADMAP and gates (pluginval, RT-safety, bounded work). No research code linked yet; preserves Lite’s fast, minimal core.\n```\n\nIf anything above doesn’t match your repo conventions, I’ll tweak and regenerate. For reference, the repo docs already position Lite as the minimal, stable base and the Research Vault as high-value IP to be mined carefully—this plan just operationalizes that.  &#x20;\n Great question. Two prongs: **(A) structure that forbids rot**, and **(B) automation that screams when rot appears**. Here’s a lean, battle-tested setup you can drop in today.\n\n# A) Folder & ownership hygiene\n\n* **Fixed module map**: `Source/{Core,DSP,UI,Utils,Experimental}` only. Anything not in those is either third-party or archived.\n* **One README per dir**: list public headers, deps, and compile flags; everything else is considered private/internal.\n* **Feature flags for anything new**: `SC_ENABLE_STUB`, `SC_ENABLE_PSYCHO`, etc.; default **OFF** so experimental code can live without shipping.\n* **OWNERS files** (tiny): name 1–2 approvers per folder; no PR touches a folder without an owner.\n  (Keeps Lite as the authoritative, minimal base you outlined. )\n\n# B) Tooling that prevents “ghost code”\n\nGhost code = files that compile but aren’t referenced, dead headers, orphaned modules, or code behind permanently-OFF flags.\n\n## 1) CMake: explicit sources, no GLOB\n\n```cmake\n# CMakeLists.txt (excerpt)\nset(SC_CORE_SRCS\n  Source/Core/SpectralCanvasProProcessor.cpp\n  Source/Core/MaskColumn.cpp\n  Source/Core/Snapshot.h\n)\n\nset(SC_DSP_SRCS\n  Source/DSP/PsychoacousticMaskingEngine.cpp\n)\n\nset(SC_UI_SRCS\n  Source/UI/SpectralCanvasProEditor.cpp\n)\n\nadd_library(SpectralCanvasLite STATIC\n  ${SC_CORE_SRCS} ${SC_DSP_SRCS} ${SC_UI_SRCS}\n)\n\n# Feature flags (default OFF)\noption(SC_ENABLE_STUB \"Enable SpectralEngineStub path\" OFF)\noption(SC_ENABLE_PSYCHO \"Enable Psychoacoustic engine\" OFF)\n\n# Fail on unused/unknown flags & symbols\ntarget_compile_options(SpectralCanvasLite PRIVATE\n  $<$<CXX_COMPILER_ID:MSVC>:/WX /W4>\n  $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Werror -Wall -Wextra -Wpedantic>\n)\n```\n\n*Why:* explicit lists make it impossible for stray files to slip in via globbing; warnings as errors stop half-wired code from landing.\n\n## 2) Orphan detector (CI + pre-commit)\n\nDrop this tiny script as `tools/check_orphans.py` and gate PRs on it.\n\n```python\nimport pathlib, sys, re\n\nroot = pathlib.Path(__file__).resolve().parents[1]\nsrc_files = {p for p in (root/\"Source\").rglob(\"*\") if p.suffix in (\".cpp\",\".c\",\".mm\",\".m\",\".h\",\".hpp\")}\ncmake = (root/\"CMakeLists.txt\").read_text(encoding=\"utf-8\")\nlisted = set(re.findall(r\"Source/[A-Za-z0-9_./-]+\\.(?:c|cpp|mm|m|h|hpp)\", cmake))\n\nunlisted = [str(p).replace(\"\\\\\",\"/\") for p in src_files if str(p).replace(\"\\\\\",\"/\") not in listed]\n# Ignore experimental by convention\nunlisted = [u for u in unlisted if \"/Experimental/\" not in u]\n\nif unlisted:\n    print(\"❌ Orphan files not in CMakeLists:\")\n    for u in sorted(unlisted): print(\"  -\", u)\n    sys.exit(1)\n\nprint(\"✅ No orphans; CMake lists match filesystem.\")\n```\n\nGit hook `pre-commit`:\n\n```bash\n#!/usr/bin/env bash\nset -euo pipefail\npython tools/check_orphans.py\n```\n\n## 3) Dead-code & header hygiene\n\n* **Clang-tidy/LLVM**: enable `-Wunused-function`, `-Wunused-parameter`, `-Wmissing-declarations`.\n* **Include-What-You-Use (IWYU)**: add to CI to detect “headers included but never used”.\n* **Public headers only from module roots**: forbid `#include` across sibling modules unless via a `/include` subfolder.\n\n## 4) Flag coverage guard\n\nAdd a unit smoke that **builds twice** in CI:\n\n1. `-DSC_ENABLE_PSYCHO=OFF -DSC_ENABLE_STUB=OFF`\n2. `-DSC_ENABLE_PSYCHO=ON  -DSC_ENABLE_STUB=ON`\n   If either build fails or introduces unused code warnings, CI fails. (Keeps RT-safe baseline intact while enabling incremental research integration. )\n\n## 5) “Archive, don’t delete” lane\n\n* Put research in `Research_Vault/` **outside** the build graph; only port in via explicit module PRs with flags.\n  (Matches your Context Bridge: keep Lite clean; mine the vault deliberately. )\n\n## 6) PR checklist (short, ruthless)\n\n* [ ] Added file paths to explicit CMake lists\n* [ ] `tools/check_orphans.py` passes\n* [ ] No new warnings with `-Werror`\n* [ ] If new code: behind a `SC_ENABLE_*` flag (default OFF)\n* [ ] RT-safety intact (no allocs/locks in `processBlock`)\n* [ ] pluginval ≥ 8 passes (from your success checklist).&#x20;\n\n---\n\n# Drop-in “Next Claude Code prompt block”\n\n(One code block; instructions only. Claude/Cursor will implement the files & CI wiring.)\n\nCLAUDE CODE – GHOST CODE GUARDRAILS\n\nGoal\nKeep SpectralCanvasLite organized and free of ghost code by enforcing explicit CMake source lists, an orphan detector, strict warnings, and dual-config CI (flags OFF/ON).\n\nTasks\n\n1. Create tools/check\\_orphans.py using the script above.\n2. Add .githooks/pre-commit that runs the orphan check; wire `git config core.hooksPath .githooks`.\n3. Update CMakeLists.txt:\n\n   * Use explicit file lists per module (no GLOB).\n   * Add `option(SC_ENABLE_STUB ...)` and `option(SC_ENABLE_PSYCHO ...)` default OFF.\n   * Add `-Werror -Wall -Wextra -Wpedantic` (or `/WX /W4` on MSVC).\n4. Add CI workflow:\n\n   * Matrix builds: (flags OFF) and (flags ON).\n   * Steps: configure, build, run `tools/check_orphans.py`, run pluginval (strictness ≥8).\n5. Add README stubs in each module directory documenting public headers and deps.\n6. Add OWNERS files in Core, DSP, UI, Utils with approver handles.\n7. Update docs/Documentation Index to link these policies.\n\nAcceptance\n\n* Both flag configs build clean with zero warnings.\n* Orphan check passes on PR and pre-commit.\n* No code outside `Source/{Core,DSP,UI,Utils,Experimental}` is compiled.\n* pluginval ≥8, RT-safety checklist remains true.\n\nEnd block.\n\n---\n\nIf you want, I can also hand you a tiny commit message for the first PR:\n\n```\nchore: add ghost-code guardrails\n\nEnforces explicit CMake source lists, adds orphan detector + pre-commit hook, and turns on strict warnings. Introduces dual-config CI (flags off/on) and per-module READMEs/OWNERS. Locks Lite as clean product base while enabling safe, incremental research integration.\n```\n\nThis keeps Lite minimal and fast while letting you mine the vault safely over time (your current docs already frame Lite as the clean, authoritative foundation with checks like pluginval and RT-safety). &#x20;\n from chatgpt."
+  },
+  {
+    "role": "user",
+    "content": "<user-prompt-submit-hook>[[ ultrathink ]]\n[DAIC: Implementation Mode Activated] You may now implement ONLY the immediately discussed steps. DO NOT take **any** actions beyond what was explicitly agreed upon. If instructions were vague, consider the bounds of what was requested and *DO NOT* cross them. When you're done, run the command: daic\n</user-prompt-submit-hook>"
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "The user has shared comprehensive strategies from ChatGPT about:\n1. How to organize SpectralCanvasLite to prevent ghost code accumulation\n2. Detailed implementation plans with phases, gates, and validation\n3. Ghost code prevention through explicit CMake lists, orphan detection, and CI/CD practices\n\nThey're now in plan mode and have asked me to review what we have. The user seems to want me to implement these suggestions, particularly:\n- Creating a structured task with phases\n- Adding docs/ROADMAP.md \n- Organizing the Source directory properly\n- Implementing Phase 1 with SPSC queue, MaskColumn, and Snapshot\n- Setting up ghost code prevention mechanisms\n\nSince I'm in plan mode, I should create a comprehensive plan based on these excellent suggestions from ChatGPT, incorporating the ghost code prevention strategies and the phased implementation approach.",
+        "signature": "EokICkYIBxgCKkBKuJlpg7PAj5ws+bwQcDTsP0V4o2/+agDv4cgZCHIwyKpJGZoU+HvDY56ORYz2p4ymQRKV8SQievFb96jA7wLgEgw2kP8zAe9+y32zB4saDAHINZRDMO5bWeJCoSIwJ4nwhrD1Z44G67vO7jhN6gzQ/3DYH5+D4J6f5rKPkO4T2oiJCO+BuXKx52Z4ZiS9KvAGSXApNx+sn+nz6GMKIrBph3547XrC9AElxEY0/S+5ADJ/2OAZ720kBRDFCSVs4rmNAvMQwLhsLS+c2TySk7NzpEXRTd0ylJtC9zVpL8N1bGx/yc3Gnme9yhiSwVOWXPnOYGRbbdI1QZwiOTglRpbv2OD5pUD/cdDWySKC+wRbYaqS+fOgRon82jtd2pvR7wudDnPjK3fOgK91VTp5LyckyTgcrgmvVb+jMaLaLMRaIsxkqSrafOWue/dwQzBIVkmEHMtyBWUsruN/JVpy64+diMfd3qZM18m5uZWvBKCm8q0sALpaFL/Z5jTcVnfNv2TBrbuHNqnaoKKf26bcyNMIciBMomNXGfhOCWfvfahk2gbTvIMkB//2UaGA5I0igpqrpP/8ogDjj8eaKsPo6dFVTjO6xOKz360tt9bTLtTIDOMyGknOlmCJHatFEkT/3+EwlPNJIf2wdkeaXvC2Zqp32LPMpQvkWgtQJNyGH1IpiMoKRr8WEWzwMorCexNtEoNfKVPDfYVWY55vlOp+LYLRre//YiNZn2WeiixtCXoSg8x5uGsNuYrItY/1qNCHRLZ0yVzwKb69xBj85YEPdGnjzOETzZENXszmQ5OQ/GnElAepGGaxX4ktEkKmaNv31rWCel14lv9AKr/2stHNdp8oa3sixKzFXbOy6qY+aqDn8kpQq7eya2q3jh2FUTEL5CQfwVjlvOgYFuJZEt3bPPA1LUlUfIIgsiepjz8S6zg0wAmVATPMJ7CFkyR+MhCmCjBr4hXkaQXcbdIjItdpSfOl9SlyROlRDnxf7M9HkpAWhcWFiTLMnHR9WKBaw26SnqCGD33NdpE/S0Mhwqth/jj1T1inVwQ3/f5uNfYbQKpuc237CwBtHEUZluiJHoUCV3vZ0rZLOdACLN2Nr1qJuDhp26Z/XoK8CBqzIys6JStbly1mnDGSJ+tOHFh6XEgCunY4Dce9qvW1e8ATOXPjiYJBQ1K4ZtobUl+JghTbfsW47r8U/DFQOaxI9mdYOjWADcVk2SAHqPGOdpSwF9MUbFVtLJKMSZ/CWP+ugewvRWCXmijg7bRDp4m4DgYlVXCH6TiBM9N1dqgTo79UrwHqMauuzZzE5EbTPS/vG/f/nNt05go7qdupG6BRojcnfFhGfelf9B3Wo3pBZKs0LnBpUd/8ZxgB"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "Excellent guidance from ChatGPT! This gives us a clear, structured approach to build SpectralCanvasLite properly while preventing the bloat that plagued the original. Let me create a comprehensive plan incorporating both the phased implementation and ghost code prevention strategies."
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_01Tm949Rv5eN7K443gr9EvLP",
+        "name": "TodoWrite",
+        "input": {
+          "todos": [
+            {
+              "content": "Create h-implement-spectral-canvas-foundation task directory",
+              "status": "pending",
+              "activeForm": "Creating h-implement-spectral-canvas-foundation task directory"
+            },
+            {
+              "content": "Write docs/ROADMAP.md with phases and gates",
+              "status": "pending",
+              "activeForm": "Writing docs/ROADMAP.md with phases and gates"
+            },
+            {
+              "content": "Fix Source directory organization",
+              "status": "pending",
+              "activeForm": "Fixing Source directory organization"
+            },
+            {
+              "content": "Update CMakeLists.txt with explicit file lists",
+              "status": "pending",
+              "activeForm": "Updating CMakeLists.txt with explicit file lists"
+            },
+            {
+              "content": "Implement Phase 1: SPSC queue and infrastructure",
+              "status": "pending",
+              "activeForm": "Implementing Phase 1: SPSC queue and infrastructure"
+            },
+            {
+              "content": "Add ghost code prevention tools",
+              "status": "pending",
+              "activeForm": "Adding ghost code prevention tools"
+            },
+            {
+              "content": "Build and validate with pluginval",
+              "status": "pending",
+              "activeForm": "Building and validating with pluginval"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "tool_use_id": "toolu_01Tm949Rv5eN7K443gr9EvLP",
+        "type": "tool_result",
+        "content": "Todos have been modified successfully. Ensure that you continue to use the todo list to track your progress. Please proceed with the current tasks if applicable"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "Let me create a comprehensive plan that combines the phased implementation approach with ghost code prevention. This will be the ExitPlanMode plan that structures everything properly.",
+        "signature": "EuECCkYIBxgCKkABD4PZZCOvC3nvEU1t5faMRBoqZZq90c8lq2OVwaQ/mUgI4ixXTBsjtdilA1EePLuG7S+o6hkna2mLdwAwjrnjEgw2ExriqIlgBj8QOJkaDCrVa9Pn3UX9lqOmzyIwBHKNNxwyEVjtL1AGTbDoKspkgWwHqsuXzadwfhnmuIqFNgQ+dwpPo79AX5HZG6Z8KsgBY2fWe0Y3YKzoI1siJoPxP/22FHVTsZnz0IMk2N3pCU1PvkJ+b+AAm8Pe0LZ6nCo8JEur5p2a/qGEhBr0/d6uWCTTOsKYyqpAY+zyFh2IRGMBi00FIFTDRJH6AB4qzzcXlZuuzMB95N0J0WcZIRNmT1u360dNRy41VVZADGZTIb4KH+CKqdAGl8DAmLndGLoZ13QC5oECbXjCY11Xy79aYi8vI19wu+X6FX+Ghknxym6455U1i7ppv4H1g585Sk/gFdkM/Xx6tBUYAQ=="
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_017c54Srmb3NhX8uUmgr1Sco",
+        "name": "ExitPlanMode",
+        "input": {
+          "plan": "# SpectralCanvasLite: Clean Foundation Implementation Plan\n\n## Phase 1: Task & Documentation Structure\n**Create comprehensive task scaffolding:**\n1. Create `sessions/tasks/h-implement-spectral-canvas-foundation/README.md` (directory task)\n2. Write `docs/ROADMAP.md` with phased approach and validation gates\n3. Update `docs/Documentation Index` with links to new roadmap\n\n## Phase 2: Source Organization & Ghost Code Prevention\n**Fix directory structure and add guardrails:**\n1. Fix current misplaced files (already moved to subdirs, need to undo)\n2. Create proper Source structure:\n   - `Source/Core/` - Plugin infrastructure\n   - `Source/DSP/` - Audio processing engines  \n   - `Source/UI/` - Interface components\n   - `Source/Utils/` - RT-safe utilities\n3. Add ghost code prevention:\n   - Create `tools/check_orphans.py` script\n   - Add `.githooks/pre-commit` hook\n   - Add per-directory README files\n\n## Phase 3: CMake Cleanup & Feature Flags  \n**Update CMakeLists.txt with explicit lists and flags:**\n1. Fix naming inconsistency (SpectralCanvasLite vs SpectralCanvasPro)\n2. Use explicit file lists (no GLOB patterns)\n3. Add feature flags:\n   - `SC_ENABLE_STUB` (SpectralEngineStub)\n   - `SC_ENABLE_PSYCHO` (PsychoacousticEngine)\n4. Add strict compiler warnings (-Werror, -Wall)\n\n## Phase 4: Core Infrastructure Implementation\n**Implement Phase 1 components:**\n1. `Utils/SpscQueueLite.h` - Lock-free queue\n2. `Core/MaskColumn.h` - Paint event structure\n3. `Core/Snapshot.h` - RT-safe telemetry\n4. Wire bounded drain (≤16) in processor\n5. Add minimal HUD overlay showing counters\n\n## Phase 5: Integration & Validation\n**Connect existing components:**\n1. Wire PsychoacousticMaskingEngine into processor\n2. Add minimal STFT processing stub\n3. Build and test with pluginval (≥8 strictness)\n4. Verify RT-safety (no allocs/locks in processBlock)\n\n## Validation Gates (Required for each phase)\n✅ Builds cleanly with zero warnings\n✅ No orphan files (check_orphans.py passes)\n✅ RT-safe (no allocations/locks in audio thread)\n✅ Bounded work per block (≤16 operations)\n✅ pluginval strictness ≥8 passes\n✅ Feature flags work (builds with all OFF and all ON)\n\n## Key Principles\n- Start minimal, add complexity behind flags\n- Explicit is better than implicit (no GLOB)\n- Every file must have a purpose and owner\n- Archive don't delete (Research_Vault stays external)\n- Test early, test often"
+        }
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "tool_result",
+        "content": "User has approved your plan. You can now start coding. Start with updating your todo list if applicable",
+        "tool_use_id": "toolu_017c54Srmb3NhX8uUmgr1Sco"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "Great! The user has approved the plan. Now I need to start implementing it. Let me update my todo list to reflect the approved plan structure and begin with the first task.\n\nLet me start with creating the task directory structure as outlined in the plan.",
+        "signature": "EqkDCkYIBxgCKkAW8tJHGy5t+ECDtH7NpVK2ls500Bpz//+uvvpEbkWykpvl8WhAxl8RXz4T2Q7wtq+uEwLKG3mZdx6gryLCHsLGEgx2VstwNehL+de9hv4aDN/vMZ3nzxcJHfpXySIwWfCG/njtFYGkP9aZSB+mcWiwwLKygrgJjqiwg5RMbFuJBRHgALd3UDQdqFNE8d8NKpACnNHUD41lBCMn/pjqB8b+VX5Kg7sB8EymFg42rm/cDr2ifQ2PcEeuZhQvTnGUVO9uMxDtdBL6jLlFKknzqyRx+dEGmtozduDCXII2040vG/iSt/OSMpmA9iZZIVc6ZbOlCAuw5NniL7WD2wo78bR25y93L5Vx4tFp6ByklA9RziWlCK2hfbt/Kfx6WQLC3uW/8kMu8RLguwQEkDbb4nwR1AwZdpoZa+TJPUY58wMtLPo/hPSqbttLHwZlNz4AOwY0CT9QxPdbhul0W+VecPuXi1JWYHni8nUxWuNv+uEM2d+g6vclCvc5Hb1OhdJGs1dIKmhVnGvXzfVg1ebBuizos4eCvoRd8uA6t1oztseCmbUYAQ=="
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_01PUnmnVVNjEzihMNKUsC9X4",
+        "name": "TodoWrite",
+        "input": {
+          "todos": [
+            {
+              "content": "Create h-implement-spectral-canvas-foundation task directory",
+              "status": "in_progress",
+              "activeForm": "Creating h-implement-spectral-canvas-foundation task directory"
+            },
+            {
+              "content": "Write docs/ROADMAP.md with phases and gates",
+              "status": "pending",
+              "activeForm": "Writing docs/ROADMAP.md with phases and gates"
+            },
+            {
+              "content": "Fix Source directory organization",
+              "status": "pending",
+              "activeForm": "Fixing Source directory organization"
+            },
+            {
+              "content": "Update CMakeLists.txt with explicit file lists",
+              "status": "pending",
+              "activeForm": "Updating CMakeLists.txt with explicit file lists"
+            },
+            {
+              "content": "Implement Phase 1: SPSC queue and infrastructure",
+              "status": "pending",
+              "activeForm": "Implementing Phase 1: SPSC queue and infrastructure"
+            },
+            {
+              "content": "Add ghost code prevention tools",
+              "status": "pending",
+              "activeForm": "Adding ghost code prevention tools"
+            },
+            {
+              "content": "Build and validate with pluginval",
+              "status": "pending",
+              "activeForm": "Building and validating with pluginval"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "tool_use_id": "toolu_01PUnmnVVNjEzihMNKUsC9X4",
+        "type": "tool_result",
+        "content": "Todos have been modified successfully. Ensure that you continue to use the todo list to track your progress. Please proceed with the current tasks if applicable"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "Perfect! Now I need to start implementing the approved plan. Let me begin with the first task: creating the h-implement-spectral-canvas-foundation task directory.\n\nFirst, let me check if the sessions/tasks directory structure exists and then create the task.",
+        "signature": "Eq0DCkYIBxgCKkBfibzmSm1vSowFt2Fyr01sBvC95imQU4jtPWAm057cyQpNdiEJRimY5COdfIzX1pGkoybh65ZiuWibo8cbZWACEgzaTkobFQwk8Z1wbGMaDKi+rXBy7Tm7+9cToSIwdrTLjd9pGfQ4wE8KCDcJ11s3u4Lbir7GNc1fIiFJMBQ/XDbtAy4UpIUqt+ubsRD/KpQCr1YDGo9wgJ570++tGYHgkx32vStF3GUZLCH8iDif5D4nkxlKTfq17DEPvWU1edPMbHFRXzViB8tCf+WJhQJ59GLe0JMp/YADjeTDbDkkBm3OCRAkfPNi4b1JmEGE790yIcAOITdDHywYq1fnAAmsmnebN4D1CHFVJ8fN7zGnB96xxOGyZh63xP78syN/Xp8q8lEG6yslI5cH9mi7ssnv2uFWs7aTCaluhbcdVLTnPZpAIzDdntpHupGsZlUt1dZH1fbnSIS6EK9Zs9deC2gpS+HAVbRo9uYdTOeLIzEwW516Kn96AwZ/13kJA6wv2hxGRIniLC051rph5Vc6JC8HOsJjNJuGwstwxO9L1CFygzQCTR9ZGAE="
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_016MqXAhf8MMzwwtLq6KZfxj",
+        "name": "Bash",
+        "input": {
+          "command": "ls sessions/tasks/",
+          "description": "Check existing task structure"
+        }
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "tool_use_id": "toolu_016MqXAhf8MMzwwtLq6KZfxj",
+        "type": "tool_result",
+        "content": "done\nh-implement-spectral-canvas-foundation\nTEMPLATE.md",
+        "is_error": false
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "I see there's already an h-implement-spectral-canvas-foundation directory. Let me check if it has content and create the proper README.md file for it.",
+        "signature": "EsICCkYIBxgCKkDVbZiUQMK5RZcZxnlUY0Rd1STwSMsgY872cx4DYKk3xBWbHZjmn78kD62PqlUu0OTvyYexJBWrED7ost1u6U+VEgwac5kMMfC99D8UU1EaDPFf3L/3pp87u1SBcCIwV9RAYfGMouIQxeHN+FGVuBhc2AFwIe7kgfzBoaVZUyzifcM+GyOn/vAiAPLzTxcJKqkB3KufBUAeBCXvwU5b7fVUpgSHexcOCbnck8KFyX+dtHtmDg4JU3mytZrXS8vjyog2YY9Zrz5BcPZhSXRCbyzYPecaGhXdbhSTP6eIEaOsZgLl6NRJKD+uvE0InZ6XOnKVNJfb+pQKJnWX306cO1XB5pJqcohIMmaWP5QY1LuDokBC0DcWH5gMvlBQMapRqTm3ooKPuUq0DMV5M5OXJUTLjLniYjVRbGGhaxgB"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_01TJuiGcvdavuNRe9Ja5VMkQ",
+        "name": "Bash",
+        "input": {
+          "command": "ls sessions/tasks/h-implement-spectral-canvas-foundation/",
+          "description": "Check task directory contents"
+        }
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "tool_use_id": "toolu_01TJuiGcvdavuNRe9Ja5VMkQ",
+        "type": "tool_result",
+        "content": "README.md",
+        "is_error": false
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "The task directory already exists with a README.md. I need to create a comprehensive task file based on the approved plan. Let me write the proper task file.",
+        "signature": "EsgCCkYIBxgCKkDXqOfAiTcZlyiK386rBpZIAYav4HKX97WOpqRbeqOhn0IG8ovHKbRKo01rdCmw4aYXppx6j+7NfY/CFg63BSa1EgxbwL7yotiIzZ3k2A8aDLvX32MjARIM1RMkJiIwCwKpKgcx0beibvWAdvk4TvbwK11pQ/AMpGPO+awrHJYnpGpix/6MSA9XWxzjudBGKq8BEBoJJ3swU8BQ4GTJA7cZZNfIrVJre2rQKRENryaWme79Tx2Qh5aSTVmw3OfFZnCini/ONncmrPhibrpmN3gU7NTPKMRvWt2diN1TK4CwqlmoA8k2+xTR2IFVqJ3T1ez9uOh860hb5kMaGA7qHMR8rELT1qUU1PfzhCQPu9qmwPmm+4ISfECfMwtym+6VM7TQzsyGlaJ6anbwAmMwGY8cYXcnZwpCx8HTZjEc5vMvGhgB"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_012nkskEnYsaLFQ6TRCUiK5T",
+        "name": "Write",
+        "input": {
+          "file_path": "sessions/tasks/h-implement-spectral-canvas-foundation/README.md",
+          "content": "---\ntask: h-implement-spectral-canvas-foundation\nbranch: feature/implement-spectral-canvas-foundation\nstatus: pending\ncreated: 2025-09-11\nmodules: [Source/Core, Source/DSP, Source/UI, Source/Utils, docs, tools]\n---\n\n# SpectralCanvasLite Foundation Implementation\n\n## Problem/Goal\nTransform SpectralCanvasLite from a simple audio ducking plugin into a production-ready spectral audio processor by strategically porting valuable components from the ResearchVault while maintaining clean architecture and preventing ghost code accumulation.\n\n## Success Criteria\n\n### Phase 1: Task & Documentation Structure ✅\n- [x] Create comprehensive task scaffolding\n- [ ] Write docs/ROADMAP.md with phased approach and validation gates\n- [ ] Update docs/Documentation Index with links to new roadmap\n\n### Phase 2: Source Organization & Ghost Code Prevention\n- [ ] Fix current file organization issues\n- [ ] Create proper Source structure (Core/, DSP/, UI/, Utils/)\n- [ ] Add ghost code prevention tools:\n  - [ ] tools/check_orphans.py script\n  - [ ] .githooks/pre-commit hook\n  - [ ] Per-directory README files\n\n### Phase 3: CMake Cleanup & Feature Flags\n- [ ] Fix naming inconsistency (SpectralCanvasLite vs SpectralCanvasPro)\n- [ ] Use explicit file lists (no GLOB patterns)\n- [ ] Add feature flags (SC_ENABLE_STUB, SC_ENABLE_PSYCHO)\n- [ ] Add strict compiler warnings (-Werror, -Wall)\n\n### Phase 4: Core Infrastructure Implementation\n- [ ] Utils/SpscQueueLite.h - Lock-free RT-safe queue\n- [ ] Core/MaskColumn.h - Paint event structure\n- [ ] Core/Snapshot.h - RT-safe telemetry counters\n- [ ] Wire bounded drain (≤16) in processor\n- [ ] Add minimal HUD overlay showing counters\n\n### Phase 5: Integration & Validation\n- [ ] Wire PsychoacousticMaskingEngine into processor\n- [ ] Add minimal STFT processing stub\n- [ ] Build and test with pluginval (≥8 strictness)\n- [ ] Verify RT-safety (no allocs/locks in processBlock)\n\n## Validation Gates (Required for each phase)\n- ✅ Builds cleanly with zero warnings\n- ✅ No orphan files (check_orphans.py passes)\n- ✅ RT-safe (no allocations/locks in audio thread)\n- ✅ Bounded work per block (≤16 operations)\n- ✅ pluginval strictness ≥8 passes\n- ✅ Feature flags work (builds with all OFF and all ON)\n\n## Context Files\n- docs/PsychoacousticEngine_Analysis.md - Core psychoacoustic IP analysis\n- docs/SpectralSynthEngine_Analysis.md - Synthesis engine analysis\n- C:\\spectralCanvasPro\\ResearchVault\\ - Source vault with 237+ files\n- C:\\spectralCanvasPro\\HANDOFF_TO_CLAUDE.md - Strategic handoff document\n- Source/DSP/PsychoacousticMaskingEngine.h - Already ported engine\n\n## User Notes\n**Strategic approach**: Start small with infrastructure, add complexity incrementally behind feature flags. Focus on RT-safety and clean architecture over feature completeness. Each phase must be shippable.\n\n**Ghost Code Prevention**: Enforce explicit CMake source lists, orphan detection, strict warnings, and dual-config CI (flags OFF/ON). Archive don't delete - keep ResearchVault external.\n\n**Key Principles**:\n- Explicit is better than implicit (no GLOB)\n- Every file must have a purpose and owner\n- Start minimal, add complexity behind flags\n- Test early, test often\n\n## Work Log\n- [2025-09-11] Created comprehensive task structure with 5-phase implementation plan\n- [2025-09-11] Identified existing PsychoacousticMaskingEngine already ported but not integrated"
+        }
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "tool_use_id": "toolu_012nkskEnYsaLFQ6TRCUiK5T",
+        "type": "tool_result",
+        "content": "The file sessions/tasks/h-implement-spectral-canvas-foundation/README.md has been updated. Here's the result of running `cat -n` on a snippet of the edited file:\n     1→---\n     2→task: h-implement-spectral-canvas-foundation\n     3→branch: feature/implement-spectral-canvas-foundation\n     4→status: pending\n     5→created: 2025-09-11\n     6→modules: [Source/Core, Source/DSP, Source/UI, Source/Utils, docs, tools]\n     7→---\n     8→\n     9→# SpectralCanvasLite Foundation Implementation\n    10→\n    11→## Problem/Goal\n    12→Transform SpectralCanvasLite from a simple audio ducking plugin into a production-ready spectral audio processor by strategically porting valuable components from the ResearchVault while maintaining clean architecture and preventing ghost code accumulation.\n    13→\n    14→## Success Criteria\n    15→\n    16→### Phase 1: Task & Documentation Structure ✅\n    17→- [x] Create comprehensive task scaffolding\n    18→- [ ] Write docs/ROADMAP.md with phased approach and validation gates\n    19→- [ ] Update docs/Documentation Index with links to new roadmap\n    20→\n    21→### Phase 2: Source Organization & Ghost Code Prevention\n    22→- [ ] Fix current file organization issues\n    23→- [ ] Create proper Source structure (Core/, DSP/, UI/, Utils/)\n    24→- [ ] Add ghost code prevention tools:\n    25→  - [ ] tools/check_orphans.py script\n    26→  - [ ] .githooks/pre-commit hook\n    27→  - [ ] Per-directory README files\n    28→\n    29→### Phase 3: CMake Cleanup & Feature Flags\n    30→- [ ] Fix naming inconsistency (SpectralCanvasLite vs SpectralCanvasPro)\n    31→- [ ] Use explicit file lists (no GLOB patterns)\n    32→- [ ] Add feature flags (SC_ENABLE_STUB, SC_ENABLE_PSYCHO)\n    33→- [ ] Add strict compiler warnings (-Werror, -Wall)\n    34→\n    35→### Phase 4: Core Infrastructure Implementation\n    36→- [ ] Utils/SpscQueueLite.h - Lock-free RT-safe queue\n    37→- [ ] Core/MaskColumn.h - Paint event structure\n    38→- [ ] Core/Snapshot.h - RT-safe telemetry counters\n    39→- [ ] Wire bounded drain (≤16) in processor\n    40→- [ ] Add minimal HUD overlay showing counters\n    41→\n    42→### Phase 5: Integration & Validation\n    43→- [ ] Wire PsychoacousticMaskingEngine into processor\n    44→- [ ] Add minimal STFT processing stub\n    45→- [ ] Build and test with pluginval (≥8 strictness)\n    46→- [ ] Verify RT-safety (no allocs/locks in processBlock)\n    47→\n    48→## Validation Gates (Required for each phase)\n    49→- ✅ Builds cleanly with zero warnings\n    50→- ✅ No orphan files (check_orphans.py passes)\n    51→- ✅ RT-safe (no allocations/locks in audio thread)\n    52→- ✅ Bounded work per block (≤16 operations)\n    53→- ✅ pluginval strictness ≥8 passes\n    54→- ✅ Feature flags work (builds with all OFF and all ON)\n    55→\n    56→## Context Files\n    57→- docs/PsychoacousticEngine_Analysis.md - Core psychoacoustic IP analysis\n    58→- docs/SpectralSynthEngine_Analysis.md - Synthesis engine analysis\n    59→- C:\\spectralCanvasPro\\ResearchVault\\ - Source vault with 237+ files\n    60→- C:\\spectralCanvasPro\\HANDOFF_TO_CLAUDE.md - Strategic handoff document\n    61→- Source/DSP/PsychoacousticMaskingEngine.h - Already ported engine\n    62→\n    63→## User Notes\n    64→**Strategic approach**: Start small with infrastructure, add complexity incrementally behind feature flags. Focus on RT-safety and clean architecture over feature completeness. Each phase must be shippable.\n    65→\n    66→**Ghost Code Prevention**: Enforce explicit CMake source lists, orphan detection, strict warnings, and dual-config CI (flags OFF/ON). Archive don't delete - keep ResearchVault external.\n    67→\n    68→**Key Principles**:\n    69→- Explicit is better than implicit (no GLOB)\n    70→- Every file must have a purpose and owner\n    71→- Start minimal, add complexity behind flags\n    72→- Test early, test often\n    73→\n    74→## Work Log\n    75→- [2025-09-11] Created comprehensive task structure with 5-phase implementation plan\n    76→- [2025-09-11] Identified existing PsychoacousticMaskingEngine already ported but not integrated"
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": "Write operation feedback:\n- [python \"%CLAUDE_PROJECT_DIR%\\.claude\\hooks\\post-tool-use.py\"]: [DAIC Reminder] When you're done implementing, run: daic\r\n"
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "The user has approved my plan and I've been implementing it. I just completed the task directory creation and now need to continue with the next steps in my todo list:\n\n1. ✅ Create h-implement-spectral-canvas-foundation task directory - DONE\n2. Write docs/ROADMAP.md with phases and gates - NEXT\n3. Fix Source directory organization \n4. Update CMakeLists.txt with explicit file lists\n5. Implement Phase 1: SPSC queue and infrastructure\n6. Add ghost code prevention tools\n7. Build and validate with pluginval\n\nI should continue with writing the ROADMAP.md file next, then move through the other items. The hook reminder tells me to run `daic` when I'm done implementing.\n\nLet me update the todo and continue with the ROADMAP.md.",
+        "signature": "EoMHCkYIBxgCKkAgrOPhvaxc3c9Zk9U5cxlQrWzCjtRSEL6bohchjcwzg9c2afVGxdqnL1+Dvhjj77uRpH6U3nZmYFg2GRNWHBILEgw3HgYO6fL+DWZ3dR4aDNnmfEXAppEZd+jgoSIwBdM0AZ2010aYsGicpjElLH8+WE7qA5tXEGXkTbhZt6ZgWsBRPgJbM19rwOd3cmM/KuoFXAzZOjX17aPJ1hdJSzOnX8YodNnAnffBfFC6SKR9e0ffNyzorxgGzMHUwCWldS/IJa/nRG5GrPyTvofgTRg612m0H82QQHCPv/i2gjjnM59R7MAKuIHaF+8Leh/Yk810UsqYGUZi4rviU4DELzXbvdKgH2/KmKvwmk6mUUQLPv/YlrmimH3/tVs8vnvs2apyQAcrhfyLEi8jW9yznsxP1zf8ynpPDwY1azWtVPx66g7EWEVAWbe8QbLmSJ9gZ1BorQH0TvBNZkj3AUO+pm0J7TfzonsKNkQ+VXiEVf0yPcvID4aEuRpz8GBTAfCoO0DrnYucdJgUEw+7+BgqnxeABmDyDZhuGpb9/pOYK/z9s2A0kJtrBL+rmSufAERsvDlOdmj4bXVcxz96A6haSglmyCgSNf/NzHrIFPL8AlDNVnYr7UxotPzWpCb1FitZ0/UFT/JSFYFWuoZ9uRAUZ5iC5+GG3ztG35Uf4C207jvsyBbnckEszAAXXfsTSb5hU234DfJ+0wDlDDv0nBZ91QZvtJgNcjeHhq3vB8q5tvUmnSmVEQRkdkdCoj8YDcBg2xANndR+uJb3ed9+gOHnHrGjPi2mkHB5FpHKpZ4TpfOyZmYs5RIN4o0Jupz+x3Vyne1FDOkIOqUL34PTrlvRD2yGRsiaxTJB0eKgpaHmSy9MjQslrXwPaXuy421Ww5VnBI8a5SQRoDDa/zvzvVs64qbLtHFF2MobLM3BhnlNGVTCfMhq9BDnLigu/9nAuuTiwvSaeiacAqxLXy68FootDH+A1gT3652WgvJah55zsW/wOictFfEA3r5FTz9P0fI+nl16DRXyi9+b7HlIv4vOMMhURQrEFDvz7oAwe/03V9erMEnv+QmUx2OuPaL1MZqgtkEJfmVvBCusDHxv7sBboTu/nNTAJngxp+46l/sUH79Zumyn+NGDDMnqVaUfkcObWhhj4hXhFvluuwPxfHg6wD98bstX8BR8mMCQ+E4YAQ=="
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_01D4QHdpYaacnELU2yNiE3i4",
+        "name": "TodoWrite",
+        "input": {
+          "todos": [
+            {
+              "content": "Create h-implement-spectral-canvas-foundation task directory",
+              "status": "completed",
+              "activeForm": "Creating h-implement-spectral-canvas-foundation task directory"
+            },
+            {
+              "content": "Write docs/ROADMAP.md with phases and gates",
+              "status": "in_progress",
+              "activeForm": "Writing docs/ROADMAP.md with phases and gates"
+            },
+            {
+              "content": "Fix Source directory organization",
+              "status": "pending",
+              "activeForm": "Fixing Source directory organization"
+            },
+            {
+              "content": "Update CMakeLists.txt with explicit file lists",
+              "status": "pending",
+              "activeForm": "Updating CMakeLists.txt with explicit file lists"
+            },
+            {
+              "content": "Implement Phase 1: SPSC queue and infrastructure",
+              "status": "pending",
+              "activeForm": "Implementing Phase 1: SPSC queue and infrastructure"
+            },
+            {
+              "content": "Add ghost code prevention tools",
+              "status": "pending",
+              "activeForm": "Adding ghost code prevention tools"
+            },
+            {
+              "content": "Build and validate with pluginval",
+              "status": "pending",
+              "activeForm": "Building and validating with pluginval"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "tool_use_id": "toolu_01D4QHdpYaacnELU2yNiE3i4",
+        "type": "tool_result",
+        "content": "Todos have been modified successfully. Ensure that you continue to use the todo list to track your progress. Please proceed with the current tasks if applicable"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "Now I need to write docs/ROADMAP.md with the phases and gates as outlined in the plan. This should be a comprehensive document that mirrors the approach suggested in the ChatGPT guidance.",
+        "signature": "EuUCCkYIBxgCKkAQwlJdOQMjAF3EEIGKRmstTzIza9M8uTG40MwZLfQTnlQMdEnAAWmyjZXS3BdG8ZWoQTih+2/nY61eopXsC88aEgyK1TpXOhseq75vWOIaDNU+3PD28g873Ic7eSIwiTdpcVEzyUzdFrfz5zw1qm6Xp9XWpsc7UJeUm+ueX/vwp+5MWF5ri2OFeLb5s5T3KswBCq7Dl7mxBwbZ7xQBxEUBR0GjBpiOfZdlPRuyG+0St5DMuBMngktD4G5v5rghOCV5DxnOpYeuY8vnmVE3pKouC/YDlMvrGH+SVvKlKyKIVCSfvyEykabYPuYVEBxIeG1AVm/axPA1CzmNlDLiq3KB3Ou5e8sfD+w23Pl0hxewzLTBsiSaW9Y3N/4vCG/7vwSMONRoKvbtRb8D8s+fDJk5oR4TI1b5HEi+ZwdYDEeEsrR2KE9tu4fF7t9NhCZ0iOvc28ZnYKe24f3C1YhBGAE="
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_01T5Jq9wCCm2XexhTUcbNgpL",
+        "name": "Write",
+        "input": {
+          "file_path": "docs/ROADMAP.md",
+          "content": "# SpectralCanvasLite Development Roadmap\n\n## Vision\nSpectralCanvasLite serves as the clean, minimal foundation for building a production-ready spectral audio processor. We strategically mine the ResearchVault (4000+ files of high-value IP) by porting components incrementally while maintaining RT-safety, clean architecture, and preventing technical debt accumulation.\n\n## Core Philosophy\n- **Start minimal, add complexity behind flags**\n- **Explicit is better than implicit** (no GLOB patterns)  \n- **Every file must have a purpose and owner**\n- **Archive don't delete** (ResearchVault stays external)\n- **Test early, test often**\n\n---\n\n## Validation Gates (Required for All Phases)\n\nThese gates must pass for every PR and release:\n\n### 🏗️ Build Quality\n- ✅ Builds cleanly with zero warnings (`-Werror -Wall -Wextra`)\n- ✅ No orphan files (`tools/check_orphans.py` passes)\n- ✅ Feature flags work (builds with all OFF and all ON configs)\n\n### ⚡ Real-Time Safety\n- ✅ No allocations/locks in `processBlock()` (audio thread)\n- ✅ Bounded work per block (≤16 queue drains maximum)\n- ✅ Hard clamp output to ±1.0f at end of each block\n\n### 🎯 Plugin Validation\n- ✅ **pluginval strictness ≥8 passes** (level 10 preferred)\n- ✅ DAW smoke tests (load, process, paint events)\n- ✅ Latency reporting: Centered STFT (FFT_SIZE/2)\n\n### 🔬 Code Quality\n- ✅ Explicit CMake source lists (no wildcards)\n- ✅ Per-module documentation (README per directory)\n- ✅ RT-safety audit (no heap operations detected)\n\n---\n\n## Development Phases\n\n### Phase 1: Clean Architecture Foundation\n**Status**: In Progress  \n**Goal**: Establish organized structure and ghost-code prevention\n\n#### Infrastructure\n- [x] Create task scaffolding (`sessions/tasks/h-implement-spectral-canvas-foundation/`)\n- [ ] Organize `Source/` into logical subdirectories:\n  - `Source/Core/` - Plugin infrastructure (processor, parameters)\n  - `Source/DSP/` - Audio processing (STFT, engines, RT-safe code)\n  - `Source/UI/` - Interface components (canvas, editor, HUD)  \n  - `Source/Utils/` - Lock-free queues, utilities, helpers\n- [ ] Add ghost-code prevention tools:\n  - `tools/check_orphans.py` - Detect unlisted source files\n  - `.githooks/pre-commit` - Run checks before commits\n  - Per-directory `README.md` with ownership/purpose\n\n#### CMake Modernization  \n- [ ] Fix naming inconsistency (SpectralCanvasLite vs SpectralCanvasPro)\n- [ ] Convert to explicit source lists (eliminate GLOB patterns)\n- [ ] Add feature flags (default OFF):\n  - `SC_ENABLE_STUB` - Enable SpectralEngineStub path\n  - `SC_ENABLE_PSYCHO` - Enable PsychoacousticMaskingEngine\n- [ ] Add strict compiler warnings\n\n**Deliverables**: Clean directory structure, build system guardrails\n\n### Phase 2: RT-Safe Event Transport\n**Status**: Pending  \n**Goal**: Wire paint events to audio thread without DSP changes\n\n#### Core Components\n- [ ] `Utils/SpscQueueLite.h` - Single-producer, single-consumer lock-free queue\n- [ ] `Core/MaskColumn.h` - Paint event structure (column, intensity, timestamp)\n- [ ] `Core/Snapshot.h` - RT-safe telemetry counters\n\n#### Audio Thread Integration\n- [ ] Add `SpscQueueLite<MaskColumn, 1024> maskQueue_` to processor\n- [ ] Bounded drain ≤16 events per `processBlock()` call\n- [ ] Count queue rejections (full queue handling)\n- [ ] Publish per-block counters: `processedBlocks`, `queueDepth`, `drainsThisBlock`\n\n#### UI Integration  \n- [ ] Minimal HUD overlay showing live counters\n- [ ] Wire paint events from editor to processor queue\n- [ ] No allocations on audio thread (atomics + lock-free queues only)\n\n**Deliverables**: Working paint→queue→counters pipeline, silent audio passthrough\n\n### Phase 3: Minimal Spectral Processing\n**Status**: Pending  \n**Goal**: Add audible spectral masking behind feature flag\n\n#### Spectral Engine Stub\n- [ ] `DSP/SpectralEngineStub.h/.cpp` - Minimal STFT processor behind `SC_ENABLE_STUB`\n- [ ] Basic FFT→apply masks→iFFT pipeline\n- [ ] Use existing `PsychoacousticMaskingEngine` (already ported!)\n- [ ] Latency compensation: `setLatencySamples(FFT_SIZE/2)`\n\n#### Audio Path Routing\n- [ ] Route `processEnabled=true` to SpectralEngineStub when flag enabled\n- [ ] Apply mask-derived gain shaping (simple RT-safe multiplication)\n- [ ] Maintain backward compatibility (flag OFF = current ducking behavior)\n\n**Deliverables**: Audible paint→spectral masking, configurable via flag\n\n### Phase 4: Advanced Features (Competitive Differentiators)\n**Status**: Future  \n**Goal**: Port high-value IP from ResearchVault behind flags\n\n#### Priority Components (Mine from ResearchVault)\n- [ ] **AdvancedPsychoacousticEngine** - AI-powered masking with neural enhancement\n- [ ] **SpectralSynthEngine** - Musical additive synthesis with harmonic quantization\n- [ ] **Z-Plane Spectral Masking** - Advanced frequency domain processing\n- [ ] **Voice Pooling System** - Polyphonic synthesis management\n\n#### UI Enhancements\n- [ ] **CanvasComponent** - Real-time spectral painting with gesture tracking\n- [ ] **SpectrogramComponent** - GPU-accelerated visualization\n- [ ] **Performance HUD** - Live telemetry and RT-safety monitoring\n\n**Deliverables**: Feature-complete spectral processor with unique innovations\n\n### Phase 5: Production Polish & Validation  \n**Status**: Future  \n**Goal**: Shipping-ready plugin with full validation\n\n#### Testing & Validation\n- [ ] **pluginval level 10** passes consistently\n- [ ] **DAW compatibility** testing (Pro Tools, Logic, Ableton, etc.)\n- [ ] **RT-safety audit** - Verify zero heap operations in audio thread\n- [ ] **Performance profiling** - CPU usage <15% @ 48kHz/64 samples\n\n#### Documentation & Distribution\n- [ ] Complete user documentation\n- [ ] Developer API documentation  \n- [ ] Installation/deployment guides\n- [ ] Performance benchmarks\n\n**Deliverables**: Shipping-ready SpectralCanvasLite v1.0\n\n---\n\n## Mining Playbook: ResearchVault → SpectralCanvasLite\n\nWhen porting components from the ResearchVault:\n\n1. **Identify minimal class** - Find the core functionality without dependencies\n2. **Port into isolated namespace/module** - Keep it contained and testable\n3. **Add compile flag** - Default OFF, enable incrementally  \n4. **Unit smoke + pluginval** - Validate before enabling by default\n5. **Document integration** - Update module README with usage patterns\n\n### Available ResearchVault Treasures\nBased on agent analysis of 237+ source files:\n\n#### Essential (Phase 3-4)\n- `STFTProcessor.h` - Complete STFT with psychoacoustic integration\n- `SpectralEngine.h` - Production-ready spectral processing\n- `SpscQueueLite.h` - Lock-free RT-safe communication\n\n#### High-Value IP (Phase 4)  \n- `AdvancedPsychoacousticEngine.h` - The \"secret sauce\" with AI masking\n- `SpectralSynthEngine.h` - Musical synthesis with voice pooling\n- `CanvasComponent.h` - Complete spectral painting interface\n\n#### Innovative Features (Phase 4-5)\n- Z-Plane spectral masking algorithms\n- GPU acceleration framework (D3D11 + fallbacks)\n- AI Creative Assistant with pattern recognition\n- Neural enhancement and scene analysis\n\n---\n\n## Success Metrics\n\n### Technical KPIs\n- **Build time**: <3 minutes clean build\n- **Plugin load time**: <500ms in DAW\n- **Audio latency**: <5ms paint→audio feedback  \n- **CPU usage**: <15% @ 48kHz/64 samples\n- **Memory**: Zero allocations in `processBlock()`\n\n### Quality KPIs\n- **pluginval**: Level 10 passes (no exceptions)\n- **DAW compatibility**: 95%+ success rate across major DAWs\n- **RT-safety**: Zero heap operations detected in audio thread\n- **Code coverage**: >80% for RT-critical paths\n\n### Development KPIs\n- **Ghost files**: Zero orphaned source files\n- **Build warnings**: Zero warnings with strict flags\n- **Feature flags**: All combinations build successfully\n- **Documentation**: Every module has README with API examples\n\n---\n\n## Current Status: Phase 1 In Progress\n\n✅ **Completed**\n- Task structure created\n- Roadmap documented\n- ResearchVault cataloged (237+ source files)\n- PsychoacousticMaskingEngine already ported\n\n🚧 **In Progress**  \n- Source directory organization\n- CMake modernization with explicit lists\n- Ghost-code prevention tools\n\n📋 **Next Steps**\n- Complete Phase 1 infrastructure\n- Implement SPSC queue + MaskColumn structures  \n- Wire paint events to bounded audio thread processing\n- Begin Phase 2: RT-safe event transport"
+        }
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "tool_use_id": "toolu_01T5Jq9wCCm2XexhTUcbNgpL",
+        "type": "tool_result",
+        "content": "File created successfully at: docs/ROADMAP.md"
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": "Write operation feedback:\n- [python \"%CLAUDE_PROJECT_DIR%\\.claude\\hooks\\post-tool-use.py\"]: [DAIC Reminder] When you're done implementing, run: daic\r\n"
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "The user has the DAIC reminder that I should run `daic` when I'm done implementing. I've completed the task structure creation and written the comprehensive roadmap. Let me update my todo status and then run the daic command to signal completion.",
+        "signature": "EqADCkYIBxgCKkBOFyT4GuWcs4zdh3V2epY49vhmy1On/wNH7Mqnu6l8GY0+OdCsK6UhWAmY5NndPzQp5SPEdnBLuZSnSmZFqxFMEgydm6mopwnIA04N58waDFUKJPa88WYqdB19YyIw3oBkyQQGcJK8OT0fAM0EyAwQYzy5K9bhjFhVs3B0UD57aJMugFnjlAgsGCS9Pq4iKocCz81CUdDxurBDrE1CVFbjYSyXL2PFj6tZyTu+bi5zlPq3FBuoMzYr7soQt9oFVe63t01xNam71V6XjRiH3KtOAmD51xXZeYY2kLHoCpgtl0A4Tm4UeW5YW8uM3PMh/jDJblNAGsJieuuXTx+42BkBsoP4NKqcR9QWanIWGc80UC03YJO3/27zRlVPL1Fn3gy7F8IFcc6acBh9QsZTM3GDATDj+gevsqKUmmJa6doWLVEKpm0Dgd0hCbO+G4bQICZ8BmBIgz7UR1uJkxKl+oUdTX+It2DZyo2zmaXbhJJ2MgpbDzfmsFqUsf+AhK+y30MQfNkx4SWdIsENT9+X8Aa/oS65OA2V0mAYAQ=="
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_01CBkf6h26YEqtB7sTb7ab84",
+        "name": "TodoWrite",
+        "input": {
+          "todos": [
+            {
+              "content": "Create h-implement-spectral-canvas-foundation task directory",
+              "status": "completed",
+              "activeForm": "Creating h-implement-spectral-canvas-foundation task directory"
+            },
+            {
+              "content": "Write docs/ROADMAP.md with phases and gates",
+              "status": "completed",
+              "activeForm": "Writing docs/ROADMAP.md with phases and gates"
+            },
+            {
+              "content": "Fix Source directory organization",
+              "status": "pending",
+              "activeForm": "Fixing Source directory organization"
+            },
+            {
+              "content": "Update CMakeLists.txt with explicit file lists",
+              "status": "pending",
+              "activeForm": "Updating CMakeLists.txt with explicit file lists"
+            },
+            {
+              "content": "Implement Phase 1: SPSC queue and infrastructure",
+              "status": "pending",
+              "activeForm": "Implementing Phase 1: SPSC queue and infrastructure"
+            },
+            {
+              "content": "Add ghost code prevention tools",
+              "status": "pending",
+              "activeForm": "Adding ghost code prevention tools"
+            },
+            {
+              "content": "Build and validate with pluginval",
+              "status": "pending",
+              "activeForm": "Building and validating with pluginval"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "tool_use_id": "toolu_01CBkf6h26YEqtB7sTb7ab84",
+        "type": "tool_result",
+        "content": "Todos have been modified successfully. Ensure that you continue to use the todo list to track your progress. Please proceed with the current tasks if applicable"
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "[Request interrupted by user]"
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": "gp\ngo"
+  },
+  {
+    "role": "user",
+    "content": "<user-prompt-submit-hook>[[ ultrathink ]]\n[DAIC: Implementation Mode Activated] You may now implement ONLY the immediately discussed steps. DO NOT take **any** actions beyond what was explicitly agreed upon. If instructions were vague, consider the bounds of what was requested and *DO NOT* cross them. When you're done, run the command: daic\n</user-prompt-submit-hook>"
+  }
+]

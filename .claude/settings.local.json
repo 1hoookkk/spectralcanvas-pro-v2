@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/spectralCanvasPro/**)",
+      "Bash(dir:*)",
+      "Bash(tree:*)",
+      "Bash(cmake:*)"
+    ]
+  },
+  "disableAllHooks": false
+}

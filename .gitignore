@@ -1,0 +1,15 @@
+# Build directories
+/build/
+/build-release/
+
+# IDE files
+.vscode/
+.idea/
+
+# System files
+nul
+.DS_Store
+
+# JUCE files
+Builds/
+JuceLibraryCode/

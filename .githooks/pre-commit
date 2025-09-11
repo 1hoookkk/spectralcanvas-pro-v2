@@ -1,0 +1,50 @@
+#!/bin/bash
+#
+# SpectralCanvasLite Pre-commit Hook
+# 
+# This hook runs ghost code prevention checks before allowing commits.
+# It ensures all source files are properly tracked in CMakeLists.txt.
+#
+# To enable this hook, run once from the project root:
+#   git config core.hooksPath .githooks
+#
+
+set -euo pipefail
+
+echo "🔍 SpectralCanvasLite: Running pre-commit checks..."
+
+# Ensure we're running from the repository root
+if [ ! -f "CMakeLists.txt" ]; then
+    echo "❌ Error: Must run from project root (CMakeLists.txt not found)"
+    exit 1
+fi
+
+# Run the orphan file checker
+echo "   Checking for orphaned source files..."
+
+if ! python3 tools/check_orphans.py; then
+    echo ""
+    echo "❌ COMMIT REJECTED: Ghost code prevention failed"
+    echo ""
+    echo "To fix orphaned files:"
+    echo "  1. Add missing files to the appropriate SC_*_SOURCES list in CMakeLists.txt"
+    echo "  2. OR move experimental files to Source/Experimental/ subdirectory" 
+    echo "  3. OR remove unused files from the Source/ directory"
+    echo ""
+    echo "To fix missing files:"
+    echo "  1. Create the missing files"
+    echo "  2. OR remove the entries from CMakeLists.txt"
+    echo ""
+    echo "For debugging, run: python3 tools/check_orphans.py --verbose"
+    exit 1
+fi
+
+# Additional checks could be added here:
+# - Code formatting (clang-format)
+# - Static analysis (clang-tidy)
+# - Build test (quick compile check)
+
+echo "✅ All pre-commit checks passed!"
+echo ""
+
+exit 0
