@@ -26,6 +26,11 @@ void SpectralCanvasLiteProcessor::prepareToPlay (double sampleRate, int samplesP
     synth_.prepare(sampleRate, samplesPerBlock);
 
     setLatencySamples(spectral_.getLatencySamples());
+
+    // Cache parameter pointers for RT access
+    pMode_ = reinterpret_cast<std::atomic<float>*>(apvts_.getRawParameterValue(Params::kProcessingMode));
+    pMaskFloorDb_  = reinterpret_cast<std::atomic<float>*>(apvts_.getRawParameterValue(Params::kMaskFloorDb));
+    pOutputTrimDb_ = reinterpret_cast<std::atomic<float>*>(apvts_.getRawParameterValue(Params::kOutputTrimDb));
 }
 
 void SpectralCanvasLiteProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer& midi)
@@ -35,7 +40,7 @@ void SpectralCanvasLiteProcessor::processBlock (AudioBuffer<float>& buffer, Midi
     ignoreUnused(midi);
     ScopedNoDenormals noDenormals;
 
-    const auto mode = static_cast<ProcessingMode>((int)apvts_.getRawParameterValue(Params::kProcessingMode)->load());
+    const auto mode = static_cast<ProcessingMode>((int)(pMode_ ? pMode_->load(std::memory_order_relaxed) : 0.0f));
     
     {
         SPECTRAL_PROFILE_ZONE("brush_drain");
@@ -45,8 +50,8 @@ void SpectralCanvasLiteProcessor::processBlock (AudioBuffer<float>& buffer, Midi
         }
     }
 
-    const float maskFloorDb  = apvts_.getRawParameterValue(Params::kMaskFloorDb)->load();
-    const float outputTrimDb = apvts_.getRawParameterValue(Params::kOutputTrimDb)->load();
+    const float maskFloorDb  = pMaskFloorDb_  ? pMaskFloorDb_->load(std::memory_order_relaxed)  : -24.0f;
+    const float outputTrimDb = pOutputTrimDb_ ? pOutputTrimDb_->load(std::memory_order_relaxed) : -6.0f;
 
     if (mode == ProcessingMode::Effect)
     {

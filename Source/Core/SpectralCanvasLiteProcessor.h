@@ -76,5 +76,10 @@ private:
     std::atomic<uint64_t> eventsDrained_{0};
     std::atomic<uint64_t> eventsDropped_{0};
 
+    // Cached parameter pointers for RT access
+    std::atomic<float>* pMaskFloorDb_  = nullptr;
+    std::atomic<float>* pOutputTrimDb_ = nullptr;
+    std::atomic<float>* pMode_         = nullptr;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectralCanvasLiteProcessor)
 };

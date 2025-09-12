@@ -74,6 +74,7 @@ private:
     std::vector<float> fftBuffer_;
     std::vector<float> olaBuffer_;
     int olaWritePos_ = 0;
+    int olaReadPos_ = 0;
     
     // persistent mask (K+1 bins)
     std::vector<float> maskTarget_;
@@ -82,4 +83,6 @@ private:
     float atkCoeff_ = 0.0f;
     float relCoeff_ = 0.0f;
     float peakGrDb_   = 0.0f;
+
+    int hopCounter_ = 0;
 };
